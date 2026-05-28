@@ -31,3 +31,7 @@ Thumbs.db
 
 # CloudFormation packaged artifacts
 packaged-template.yaml
+
+# Local session notes (not project content)
+plans/
+notes/
