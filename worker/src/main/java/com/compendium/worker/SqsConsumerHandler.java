@@ -8,9 +8,8 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, Void> {
 
     @Override
     public Void handleRequest(SQSEvent event, Context context) {
-        // TODO: parse recipe fetch requests from SQS messages and invoke scraper
-        context.getLogger().log("SQS event received — handler not yet implemented. Records: "
-                + event.getRecords().size());
-        return null;
+        int recordCount = event.getRecords() != null ? event.getRecords().size() : 0;
+        context.getLogger().log("SQS event received — handler not yet implemented. Records: " + recordCount);
+        throw new UnsupportedOperationException("SQS handler not yet implemented");
     }
 }
