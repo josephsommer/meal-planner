@@ -40,7 +40,7 @@ for your throughput.
 - **Backend:** Java 21, Spring Boot 3.x (upgrade to 4 when released), Spring Security with JWT
 - **DB:** MySQL, Flyway for migrations
 - **Async:** AWS SQS with a separate worker process (Java lambda)
-- **Frontend:** React 18, TypeScript (strict), Vite
+- **Frontend:** React 18, TypeScript (strict), Vite, Yarn
 - **Infra:** AWS RDS, EB
 - **CI/CD:** GitHub Actions
 - **Testing:** JUnit 5, Testcontainers,

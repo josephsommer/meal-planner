@@ -10,6 +10,11 @@ node_modules/
 dist/
 .vite/
 
+# Yarn Berry (PnP)
+.yarn/cache
+.yarn/install-state.gz
+.yarn/unplugged
+
 # Secrets / environment
 .env
 .env.*
