@@ -35,3 +35,5 @@ packaged-template.yaml
 # Local session notes (not project content)
 plans/
 notes/
+
+CLAUDE.local.md
