@@ -25,8 +25,10 @@ jobs:
           distribution: temurin
           cache: maven
           cache-dependency-path: api/pom.xml
-      - name: List WebMvcTest jar contents
-        run: ./mvnw --no-transfer-progress dependency:copy -Dartifact=org.springframework.boot:spring-boot-starter-webmvc-test:4.0.6 -DoutputDirectory=/tmp/boot-jars && unzip -l /tmp/boot-jars/spring-boot-starter-webmvc-test-4.0.6.jar | grep -i "WebMvc\|web/servlet\|web/mvc" || true
+      - name: Find WebMvcTest class in Maven cache
+        run: |
+          ./mvnw --no-transfer-progress test-compile -q || true
+          find ~/.m2 -name "*.jar" -exec sh -c 'jar tf "$1" 2>/dev/null | grep -q "WebMvcTest" && echo "==> $1" && jar tf "$1" | grep "WebMvcTest"' _ {} \;
         working-directory: api
       - name: Build and test
         run: ./mvnw --no-transfer-progress verify
