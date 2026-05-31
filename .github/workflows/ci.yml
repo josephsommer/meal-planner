@@ -25,11 +25,6 @@ jobs:
           distribution: temurin
           cache: maven
           cache-dependency-path: api/pom.xml
-      - name: Find WebMvcTest class in Maven cache
-        run: |
-          ./mvnw --no-transfer-progress test-compile -q || true
-          find ~/.m2 -name "*.jar" -exec sh -c 'jar tf "$1" 2>/dev/null | grep -q "WebMvcTest" && echo "==> $1" && jar tf "$1" | grep "WebMvcTest"' _ {} \;
-        working-directory: api
       - name: Build and test
         run: ./mvnw --no-transfer-progress verify
         working-directory: api
