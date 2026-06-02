@@ -10,6 +10,11 @@ node_modules/
 dist/
 .vite/
 
+# Yarn Berry (PnP)
+**/.yarn/cache
+**/.yarn/install-state.gz
+**/.yarn/unplugged
+
 # Secrets / environment
 .env
 .env.*
@@ -31,3 +36,9 @@ Thumbs.db
 
 # CloudFormation packaged artifacts
 packaged-template.yaml
+
+# Local session notes (not project content)
+plans/
+notes/
+
+CLAUDE.local.md
