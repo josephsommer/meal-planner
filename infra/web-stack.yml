@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  S3 bucket for the Compendium React SPA.
+  Static website hosting with public read access (HTTP only — add CloudFront for HTTPS).
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: >
+      S3 bucket names are globally unique across all AWS accounts.
+      Convention: compendium-web-ACCOUNT_ID
+
+Resources:
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        # All unrecognised paths (e.g. /recipe/123) return index.html
+        # so React Router can parse the path client-side.
+        # Without this, direct links to sub-routes return S3's 403/404 page.
+        ErrorDocument: index.html
+      # S3 added account-level public access blocks in 2018.
+      # All four must be false to allow the public bucket policy below.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  # Without this policy, objects are private even with the block removed.
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${BucketName}/*'
+
+Outputs:
+  WebsiteURL:
+    Description: >
+      S3 static website endpoint. Copy this URL into the CorsAllowedOrigin
+      parameter when redeploying infra/api-stack.yml.
+    Value: !GetAtt WebBucket.WebsiteURL
+    Export:
+      Name: CompendiumWebURL
+
+  BucketName:
+    Description: S3 bucket name (used as WEB_BUCKET GitHub secret)
+    Value: !Ref WebBucket
+    Export:
+      Name: CompendiumWebBucket

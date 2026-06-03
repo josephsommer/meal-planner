@@ -1,0 +1,147 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Allows manual re-deploys from the Actions tab without a code change,
+  # e.g. after updating an EB environment variable via CloudFormation.
+  workflow_dispatch:
+
+permissions:
+  # maven-release-plugin pushes 2 commits and a tag back to main.
+  contents: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  # Never cancel a deploy in progress — a mid-deploy cancel leaves EB
+  # stuck in "Updating" and S3 partially synced.
+  cancel-in-progress: false
+
+jobs:
+  deploy-api:
+    name: Release & deploy API to Elastic Beanstalk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # release:prepare inspects full git history; shallow clone breaks it.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: api/pom.xml
+
+      - name: Configure Git identity for release commits
+        # release:prepare commits twice. Without a git identity the commit fails.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Maven release:prepare + release:perform
+        working-directory: api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./mvnw --no-transfer-progress --batch-mode \
+            release:prepare release:perform \
+            -DlocalCheckout=true \
+            -Dusername=${{ github.actor }} \
+            -Dpassword=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract release version from release.properties
+        # release:prepare writes the tag name to release.properties.
+        # Extract just the numeric version for use in downstream steps.
+        id: version
+        run: |
+          VERSION=$(grep 'scm.tag=' api/release.properties \
+            | cut -d= -f2 | sed 's/compendium-api-//')
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Locate release JAR
+        # release:perform builds into api/target/checkout/target/
+        id: jar
+        run: |
+          JAR=$(ls api/target/checkout/target/compendium-api-*.jar \
+            | grep -v sources | head -1)
+          echo "jar_path=$JAR" >> $GITHUB_OUTPUT
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload JAR to S3 artifact bucket
+        run: |
+          aws s3 cp ${{ steps.jar.outputs.jar_path }} \
+            s3://${{ secrets.EB_ARTIFACT_BUCKET }}/compendium-api-${{ steps.version.outputs.release_version }}.jar
+
+      - name: Create EB application version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+            --version-label "${{ steps.version.outputs.release_version }}" \
+            --source-bundle \
+              S3Bucket="${{ secrets.EB_ARTIFACT_BUCKET }}",S3Key="compendium-api-${{ steps.version.outputs.release_version }}.jar" \
+            --auto-create-application
+
+      - name: Deploy to EB environment
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+            --environment-name ${{ secrets.EB_ENVIRONMENT_NAME }} \
+            --version-label "${{ steps.version.outputs.release_version }}"
+
+      - name: Wait for EB environment to become Ready
+        # Poll every 15 s for up to 10 min. EB returns "Updating" while
+        # deploying and "Ready" when the new version is serving traffic.
+        run: |
+          for i in $(seq 1 40); do
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+              --environment-names ${{ secrets.EB_ENVIRONMENT_NAME }} \
+              --query "Environments[0].Status" --output text)
+            echo "EB status: $STATUS (attempt $i/40)"
+            [ "$STATUS" = "Ready" ] && exit 0
+            sleep 15
+          done
+          echo "Timed out waiting for EB to become Ready." && exit 1
+
+  deploy-web:
+    name: Build & deploy React SPA to S3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Corepack for Yarn 4
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: yarn
+          cache-dependency-path: web/yarn.lock
+
+      - run: yarn install --immutable
+        working-directory: web
+
+      - run: yarn build
+        working-directory: web
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync dist/ to S3
+        # --delete removes stale Vite content-hashed bundles from S3.
+        # Without it, old JS files accumulate indefinitely (Vite changes
+        # the filename on every build, so old files are never overwritten).
+        run: |
+          aws s3 sync web/dist/ s3://${{ secrets.WEB_BUCKET }} \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable"
