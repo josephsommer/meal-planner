@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Elastic Beanstalk application and environment for the Compendium API.
+  Java 21 Corretto on Amazon Linux 2023, t2.micro (free tier eligible).
+
+Parameters:
+  SolutionStackName:
+    Type: String
+    Description: >
+      EB solution stack name. The patch version changes when AWS releases updates,
+      so look up the current name before deploying:
+        aws elasticbeanstalk list-available-solution-stacks \
+          --query "SolutionStacks[?contains(@,'Corretto 21') && contains(@,'Amazon Linux 2023')]"
+    Default: "64bit Amazon Linux 2023 v5.4.3 running Corretto 21"
+
+  ArtifactBucketName:
+    Type: String
+    Description: >
+      S3 bucket where the deploy workflow uploads versioned JARs.
+      Convention: compendium-eb-artifacts-ACCOUNT_ID (must be globally unique).
+
+  CorsAllowedOrigin:
+    Type: String
+    Description: >
+      S3 website URL of the React SPA. Fill in after the web stack is deployed
+      and you have run: aws cloudformation describe-stacks --stack-name compendium-web
+    Default: "http://localhost:5173"
+
+Resources:
+
+  # Stores versioned JARs that EB deploys. Versioning enables rollback —
+  # if a bad release goes out, redeploy the previous S3 object version
+  # without a rebuild.
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ArtifactBucketName
+      VersioningConfiguration:
+        Status: Enabled
+
+  # IAM role assumed by the EC2 instance running the app.
+  # The instance needs this to write CloudWatch logs and read EB config.
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: compendium-api-ec2-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Grants the instance permission to write logs to S3/CloudWatch
+        # and read EB configuration. Minimum required for a web tier.
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: compendium-api-ec2-profile
+      Roles:
+        - !Ref EC2InstanceRole
+
+  EBApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: compendium-api
+      Description: Compendium meal planning API
+
+  EBEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    DependsOn: EC2InstanceProfile
+    Properties:
+      ApplicationName: !Ref EBApplication
+      EnvironmentName: compendium-api-prod
+      SolutionStackName: !Ref SolutionStackName
+      Tier:
+        Name: WebServer
+        Type: Standard
+      OptionSettings:
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: t2.micro
+
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EC2InstanceProfile
+
+        # SingleInstance skips the Application Load Balancer.
+        # An ALB costs ~$16/month. SingleInstance uses an Elastic IP instead,
+        # which is free while the instance is running.
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance
+
+        # Matches .ebextensions/healthcheck.config and Spring Actuator.
+        - Namespace: aws:elasticbeanstalk:application
+          OptionName: Application Healthcheck URL
+          Value: /actuator/health
+
+        # EB's bundled nginx reverse proxy on Corretto/AL2023 forwards
+        # external port 80 → internal port 5000 by default.
+        # Spring Boot reads SERVER_PORT automatically, overriding application.yml.
+        # Local dev is unaffected (no env var → falls back to 8080).
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SERVER_PORT
+          Value: "5000"
+
+        # t2.micro has 1 GiB RAM. Leave headroom for the OS (~300 MiB).
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: JAVA_TOOL_OPTIONS
+          Value: "-Xms256m -Xmx512m"
+
+        # Injected into the Spring app via ${CORS_ALLOWED_ORIGIN}.
+        # Update this after you know the S3 website URL.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: CORS_ALLOWED_ORIGIN
+          Value: !Ref CorsAllowedOrigin
+
+Outputs:
+  EnvironmentURL:
+    Description: Elastic Beanstalk environment endpoint (without http://)
+    Value: !GetAtt EBEnvironment.EndpointURL
+    Export:
+      Name: CompendiumApiURL
+
+  ArtifactBucketName:
+    Description: S3 bucket holding deployment JARs
+    Value: !Ref ArtifactBucket
+    Export:
+      Name: CompendiumArtifactBucket
