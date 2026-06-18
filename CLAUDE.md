@@ -61,7 +61,7 @@ for your throughput.
   that would commit a secret.
 - **Conventional Commits** for commit messages (`feat:`, `fix:`,
   `chore:`, `docs:`, `refactor:`, `test:`).
-- **Branch per feature**, PR to `main`, squash merge.
+- **Branch per feature**, Check the branch before writing code, PR to `main`, squash merge.
 
 ## Prohibited
 
