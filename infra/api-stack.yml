@@ -11,7 +11,7 @@ Parameters:
       so look up the current name before deploying:
         aws elasticbeanstalk list-available-solution-stacks \
           --query "SolutionStacks[?contains(@,'Corretto 21') && contains(@,'Amazon Linux 2023')]"
-    Default: "64bit Amazon Linux 2023 v5.4.3 running Corretto 21"
+    Default: "64bit Amazon Linux 2023 v5.14.1 running Corretto 21"
 
   ArtifactBucketName:
     Type: String
@@ -38,6 +38,20 @@ Resources:
       VersioningConfiguration:
         Status: Enabled
 
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/service-role/aws-elasticbeanstalk-service-role"
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${ArtifactBucketName}/*"
+
+
   # IAM role assumed by the EC2 instance running the app.
   # The instance needs this to write CloudWatch logs and read EB config.
   EC2InstanceRole:
@@ -63,17 +77,17 @@ Resources:
       Roles:
         - !Ref EC2InstanceRole
 
-  EBApplication:
-    Type: AWS::ElasticBeanstalk::Application
-    Properties:
-      ApplicationName: compendium-api
-      Description: Compendium meal planning API
+  # EBApplication:
+  #   Type: AWS::ElasticBeanstalk::Application
+  #   Properties:
+  #     ApplicationName: compendium-api
+  #     Description: Compendium meal planning API
 
   EBEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     DependsOn: EC2InstanceProfile
     Properties:
-      ApplicationName: !Ref EBApplication
+      ApplicationName: compendium-api
       EnvironmentName: compendium-api-prod
       SolutionStackName: !Ref SolutionStackName
       Tier:
@@ -82,7 +96,7 @@ Resources:
       OptionSettings:
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: InstanceType
-          Value: t2.micro
+          Value: t3.micro
 
         - Namespace: aws:autoscaling:launchconfiguration
           OptionName: IamInstanceProfile
