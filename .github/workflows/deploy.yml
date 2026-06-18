@@ -67,22 +67,26 @@ jobs:
         # When releasing: read the tag written by release:prepare.
         # When skipping: read the POM version directly and strip -SNAPSHOT.
         id: version
+        working-directory: api
+        shell: bash
         run: |
           if [ "${{ inputs.skip_release }}" = "true" ]; then
-            VERSION=$(cd api && ./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
           else
-            VERSION=$(grep 'scm.tag=' api/release.properties | cut -d= -f2 | sed 's/compendium-api-//')
+            VERSION=$(grep 'scm.tag=' release.properties | cut -d= -f2 | sed 's/compendium-api-//')
           fi
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Locate JAR
         # release:perform builds into api/target/checkout/target/; package builds into api/target/.
         id: jar
+        working-directory: api
+        shell: bash
         run: |
           if [ "${{ inputs.skip_release }}" = "true" ]; then
-            JAR=$(ls api/target/compendium-api-*.jar | grep -v sources | head -1)
+            JAR=$(ls target/compendium-api-*.jar | grep -v sources | head -1)
           else
-            JAR=$(ls api/target/checkout/target/compendium-api-*.jar | grep -v sources | head -1)
+            JAR=$(ls target/checkout/target/compendium-api-*.jar | grep -v sources | head -1)
           fi
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
