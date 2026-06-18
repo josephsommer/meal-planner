@@ -6,6 +6,11 @@ on:
   # Allows manual re-deploys from the Actions tab without a code change,
   # e.g. after updating an EB environment variable via CloudFormation.
   workflow_dispatch:
+    inputs:
+      skip_release:
+        description: 'Skip maven release:prepare/perform and deploy current POM version as-is'
+        type: boolean
+        default: false
 
 permissions:
   # maven-release-plugin pushes 2 commits and a tag back to main.
@@ -36,11 +41,13 @@ jobs:
 
       - name: Configure Git identity for release commits
         # release:prepare commits twice. Without a git identity the commit fails.
+        if: inputs.skip_release != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Maven release:prepare + release:perform
+        if: inputs.skip_release != true
         working-directory: api
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,21 +58,32 @@ jobs:
             -Dusername=${{ github.actor }} \
             -Dpassword=${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract release version from release.properties
-        # release:prepare writes the tag name to release.properties.
-        # Extract just the numeric version for use in downstream steps.
+      - name: Build JAR (release skipped)
+        if: inputs.skip_release == true
+        working-directory: api
+        run: ./mvnw --no-transfer-progress --batch-mode package -DskipTests
+
+      - name: Extract version
+        # When releasing: read the tag written by release:prepare.
+        # When skipping: read the POM version directly and strip -SNAPSHOT.
         id: version
         run: |
-          VERSION=$(grep 'scm.tag=' api/release.properties \
-            | cut -d= -f2 | sed 's/compendium-api-//')
+          if [ "${{ inputs.skip_release }}" = "true" ]; then
+            VERSION=$(cd api && ./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          else
+            VERSION=$(grep 'scm.tag=' api/release.properties | cut -d= -f2 | sed 's/compendium-api-//')
+          fi
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Locate release JAR
-        # release:perform builds into api/target/checkout/target/
+      - name: Locate JAR
+        # release:perform builds into api/target/checkout/target/; package builds into api/target/.
         id: jar
         run: |
-          JAR=$(ls api/target/checkout/target/compendium-api-*.jar \
-            | grep -v sources | head -1)
+          if [ "${{ inputs.skip_release }}" = "true" ]; then
+            JAR=$(ls api/target/compendium-api-*.jar | grep -v sources | head -1)
+          else
+            JAR=$(ls api/target/checkout/target/compendium-api-*.jar | grep -v sources | head -1)
+          fi
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
       - uses: aws-actions/configure-aws-credentials@v4
