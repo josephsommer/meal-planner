@@ -86,7 +86,7 @@ jobs:
           if [ "${{ inputs.skip_release }}" = "true" ]; then
             JAR=$(ls target/compendium-api-*.jar | grep -v sources | head -1)
           else
-            JAR=$(find target/checkout -name "compendium-api-*.jar" ! -name "*sources*" | head -1)
+            JAR=$(find "$(pwd)/target/checkout" -name "compendium-api-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
           fi
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
