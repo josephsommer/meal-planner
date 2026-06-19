@@ -64,7 +64,7 @@ jobs:
         run: ./mvnw --no-transfer-progress --batch-mode package -DskipTests
 
       - name: Extract version
-        # When releasing: read the tag written by release:prepare.
+        # When releasing: read the tag written by release:prepare from git.
         # When skipping: read the POM version directly and strip -SNAPSHOT.
         id: version
         working-directory: api
@@ -73,7 +73,7 @@ jobs:
           if [ "${{ inputs.skip_release }}" = "true" ]; then
             VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
           else
-            VERSION=$(grep 'scm.tag=' release.properties | cut -d= -f2 | sed 's/compendium-api-//')
+            VERSION=$(git describe --tags --abbrev=0 | sed 's/compendium-api-//')
           fi
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
