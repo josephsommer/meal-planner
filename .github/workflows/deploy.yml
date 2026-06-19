@@ -78,16 +78,11 @@ jobs:
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Locate JAR
-        # release:perform builds into api/target/checkout/target/; package builds into api/target/.
         id: jar
         working-directory: api
         shell: bash
         run: |
-          if [ "${{ inputs.skip_release }}" = "true" ]; then
-            JAR=$(ls target/compendium-api-*.jar | grep -v sources | head -1)
-          else
-            JAR=$(find "$(pwd)/target/checkout" -name "compendium-api-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
-          fi
+          JAR=$(find "$(pwd)/target" -name "compendium-api-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
       - uses: aws-actions/configure-aws-credentials@v4
