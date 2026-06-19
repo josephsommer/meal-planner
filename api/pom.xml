@@ -11,7 +11,7 @@
 
     <groupId>com.compendium</groupId>
     <artifactId>compendium-api</artifactId>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <scm>
