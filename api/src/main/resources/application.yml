@@ -1,6 +1,15 @@
 spring:
   application:
     name: compendium-api
+  jpa:
+    hibernate:
+      # Flyway owns the schema; Hibernate only verifies entities match at startup.
+      ddl-auto: validate
+    # Prevents lazy-loading being silently triggered inside serialization —
+    # all data fetching must happen in the service layer.
+    open-in-view: false
+  flyway:
+    enabled: true
 
 server:
   port: 8080
@@ -13,3 +22,8 @@ management:
 
 cors:
   allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
+
+# Datasource is not declared here. Spring Boot reads SPRING_DATASOURCE_URL,
+# SPRING_DATASOURCE_USERNAME, and SPRING_DATASOURCE_PASSWORD from the environment
+# and binds them to spring.datasource.* automatically (relaxed binding).
+# In tests, @ServiceConnection overrides these with the Testcontainers MySQL URL.

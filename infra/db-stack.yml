@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  RDS MySQL instance for the Compendium API.
+  db.t3.micro, 20 GB gp2 — free tier eligible.
+  Deploy AFTER api-stack so the EB instance SG export is available.
+
+Parameters:
+  DBUsername:
+    Type: String
+    Description: MySQL master username.
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: MySQL master password.
+
+Resources:
+
+  # Allows MySQL traffic only from the EB EC2 instances. The source SG ID is
+  # exported by api-stack, so this stack must be deployed after api-stack.
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL from EB instances
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !ImportValue CompendiumEBInstanceSGId
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: compendium-db
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      EngineVersion: '8.0'
+      AllocatedStorage: '20'
+      StorageType: gp2
+      DBName: compendium
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !GetAtt DBSecurityGroup.GroupId
+      # "default" is the subnet group AWS auto-creates for the account's default VPC.
+      # It covers all default subnets, keeping the instance inside the VPC without
+      # requiring a custom VPC setup.
+      DBSubnetGroupName: default
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+
+Outputs:
+  DBEndpoint:
+    Description: RDS instance hostname. Pass as DBEndpoint to api-stack.
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: CompendiumDBEndpoint
