@@ -26,7 +26,33 @@ Parameters:
       and you have run: aws cloudformation describe-stacks --stack-name compendium-web
     Default: "http://localhost:5173"
 
+  DBEndpoint:
+    Type: String
+    Description: >
+      Hostname of the RDS instance. Obtained from the compendium-db stack output after
+      that stack is deployed:
+        aws cloudformation describe-stacks --stack-name compendium-db \
+          --query "Stacks[0].Outputs[?OutputKey=='DBEndpoint'].OutputValue" --output text
+
+  DBUsername:
+    Type: String
+    Description: MySQL master username. Must match the value used when deploying compendium-db.
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: MySQL master password. Must match the value used when deploying compendium-db.
+
 Resources:
+
+  # Explicit security group for the EB EC2 instances. EB auto-creates one by default,
+  # but it has no stable CloudFormation reference. Declaring it here lets the db-stack
+  # import this ID and use it as the allowed source for MySQL ingress.
+  EBInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Compendium API EC2 instances
+      # No VpcId — defaults to the account's default VPC, same as the RDS instance.
 
   # Stores versioned JARs that EB deploys. Versioning enables rollback —
   # if a bad release goes out, redeploy the previous S3 object version
@@ -102,6 +128,11 @@ Resources:
           OptionName: IamInstanceProfile
           Value: !Ref EC2InstanceProfile
 
+        # Attach the named SG so the db-stack can reference it as the allowed MySQL source.
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref EBInstanceSecurityGroup
+
         # SingleInstance skips the Application Load Balancer.
         # An ALB costs ~$16/month. SingleInstance uses an Elastic IP instead,
         # which is free while the instance is running.
@@ -133,6 +164,20 @@ Resources:
           OptionName: CORS_ALLOWED_ORIGIN
           Value: !Ref CorsAllowedOrigin
 
+        # Spring Boot reads SPRING_DATASOURCE_* env vars and binds them to
+        # spring.datasource.* properties automatically (relaxed binding).
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_URL
+          Value: !Sub "jdbc:mysql://${DBEndpoint}:3306/compendium"
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_USERNAME
+          Value: !Ref DBUsername
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_PASSWORD
+          Value: !Ref DBPassword
+
 Outputs:
   EnvironmentURL:
     Description: Elastic Beanstalk environment endpoint (without http://)
@@ -145,3 +190,9 @@ Outputs:
     Value: !Ref ArtifactBucket
     Export:
       Name: CompendiumArtifactBucket
+
+  EBInstanceSecurityGroupId:
+    Description: Security group ID attached to EB EC2 instances; imported by db-stack
+    Value: !GetAtt EBInstanceSecurityGroup.GroupId
+    Export:
+      Name: CompendiumEBInstanceSGId
