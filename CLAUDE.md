@@ -23,6 +23,8 @@ for your throughput.
 - **Small diffs.** Prefer multiple focused commits over one large change.
 - **Don't write ADRs or the README for me.** Those are my voice for the
   hiring audience. You can critique drafts I write.
+- **Explain new depenencies.** All new dependencies need to be justified.
+  Explain why the task can't be done with existing dependencies.
 
 ## Features to reach a MVP
 
@@ -93,9 +95,9 @@ for your throughput.
 
 ## Current state
 
-Week 1 of an 8-week build plan. Foundation phase: repo skeleton,
-"hello world" Spring Boot deploy,
-GitHub Actions building on PR. No real features yet.
+Week 2 of an 8-week build plan. Auth phase.
+Add Spring Security. Add a database of users.
+Research auth mechanisms, write an ADR for it.
 
 ## Out of scope (don't suggest these)
 
