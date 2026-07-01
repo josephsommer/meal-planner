@@ -95,6 +95,16 @@ Resources:
         # Grants the instance permission to write logs to S3/CloudWatch
         # and read EB configuration. Minimum required for a web tier.
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+      Policies:
+        - PolicyName: compendium-rds-iam-auth
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allows the EC2 instance to generate a 15-minute RDS auth token
+              # for the compendium_app MySQL user instead of using a static password.
+              - Effect: Allow
+                Action: rds-db:connect
+                Resource: !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/compendium_app"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -164,8 +174,8 @@ Resources:
           OptionName: CORS_ALLOWED_ORIGIN
           Value: !Ref CorsAllowedOrigin
 
-        # Spring Boot reads SPRING_DATASOURCE_* env vars and binds them to
-        # spring.datasource.* properties automatically (relaxed binding).
+        # Flyway reads these to run migrations as the master user (password auth).
+        # The app DataSource uses IAM token auth instead — see RdsIamDataSourceConfig.
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SPRING_DATASOURCE_URL
           Value: !Sub "jdbc:mysql://${DBEndpoint}:3306/compendium"
@@ -177,6 +187,21 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SPRING_DATASOURCE_PASSWORD
           Value: !Ref DBPassword
+
+        # Raw hostname used by RdsUtilities to generate the IAM auth token.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: DB_ENDPOINT
+          Value: !Ref DBEndpoint
+
+        # The IAM-authenticated MySQL user created by V2__create_app_user.sql.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: DB_IAM_USERNAME
+          Value: compendium_app
+
+        # Activates the RdsIamDataSourceConfig bean and application-aws.yml overrides.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_PROFILES_ACTIVE
+          Value: aws
 
 Outputs:
   EnvironmentURL:

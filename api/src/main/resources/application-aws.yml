@@ -1,0 +1,14 @@
+# Settings active only when SPRING_PROFILES_ACTIVE=aws (set by EB env vars).
+# The primary DataSource is supplied by RdsIamDataSourceConfig (IAM token auth).
+# Flyway gets its own connection here using the master user credentials so it
+# retains DDL privileges that the app user (compendium_app) does not have.
+spring:
+  flyway:
+    url: ${SPRING_DATASOURCE_URL}?useSSL=true&requireSSL=true
+    user: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+db:
+  endpoint: ${DB_ENDPOINT}
+  iam-username: ${DB_IAM_USERNAME}
+  region: ${AWS_DEFAULT_REGION:us-east-1}
