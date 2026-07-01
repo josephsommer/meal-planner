@@ -42,10 +42,6 @@ Resources:
       MasterUserPassword: !Ref DBPassword
       VPCSecurityGroups:
         - !GetAtt DBSecurityGroup.GroupId
-      # "default" is the subnet group AWS auto-creates for the account's default VPC.
-      # It covers all default subnets, keeping the instance inside the VPC without
-      # requiring a custom VPC setup.
-      DBSubnetGroupName: default
       PubliclyAccessible: false
       BackupRetentionPeriod: 1
       DeletionProtection: false
