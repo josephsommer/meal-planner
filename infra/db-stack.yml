@@ -49,6 +49,9 @@ Resources:
       PubliclyAccessible: false
       BackupRetentionPeriod: 1
       DeletionProtection: false
+      # Allows MySQL users created with AWSAuthenticationPlugin to authenticate
+      # using a short-lived IAM token instead of a static password.
+      EnableIAMDatabaseAuthentication: true
 
 Outputs:
   DBEndpoint:
