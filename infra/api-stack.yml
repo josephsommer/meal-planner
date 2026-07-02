@@ -26,7 +26,33 @@ Parameters:
       and you have run: aws cloudformation describe-stacks --stack-name compendium-web
     Default: "http://localhost:5173"
 
+  DBEndpoint:
+    Type: String
+    Description: >
+      Hostname of the RDS instance. Obtained from the compendium-db stack output after
+      that stack is deployed:
+        aws cloudformation describe-stacks --stack-name compendium-db \
+          --query "Stacks[0].Outputs[?OutputKey=='DBEndpoint'].OutputValue" --output text
+
+  DBUsername:
+    Type: String
+    Description: MySQL master username. Must match the value used when deploying compendium-db.
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: MySQL master password. Must match the value used when deploying compendium-db.
+
 Resources:
+
+  # Explicit security group for the EB EC2 instances. EB auto-creates one by default,
+  # but it has no stable CloudFormation reference. Declaring it here lets the db-stack
+  # import this ID and use it as the allowed source for MySQL ingress.
+  EBInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Compendium API EC2 instances
+      # No VpcId — defaults to the account's default VPC, same as the RDS instance.
 
   # Stores versioned JARs that EB deploys. Versioning enables rollback —
   # if a bad release goes out, redeploy the previous S3 object version
@@ -69,6 +95,16 @@ Resources:
         # Grants the instance permission to write logs to S3/CloudWatch
         # and read EB configuration. Minimum required for a web tier.
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+      Policies:
+        - PolicyName: compendium-rds-iam-auth
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allows the EC2 instance to generate a 15-minute RDS auth token
+              # for the compendium_app MySQL user instead of using a static password.
+              - Effect: Allow
+                Action: rds-db:connect
+                Resource: !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/compendium_app"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -102,6 +138,11 @@ Resources:
           OptionName: IamInstanceProfile
           Value: !Ref EC2InstanceProfile
 
+        # Attach the named SG so the db-stack can reference it as the allowed MySQL source.
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref EBInstanceSecurityGroup
+
         # SingleInstance skips the Application Load Balancer.
         # An ALB costs ~$16/month. SingleInstance uses an Elastic IP instead,
         # which is free while the instance is running.
@@ -133,6 +174,35 @@ Resources:
           OptionName: CORS_ALLOWED_ORIGIN
           Value: !Ref CorsAllowedOrigin
 
+        # Flyway reads these to run migrations as the master user (password auth).
+        # The app DataSource uses IAM token auth instead — see RdsIamDataSourceConfig.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_URL
+          Value: !Sub "jdbc:mysql://${DBEndpoint}:3306/compendium"
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_USERNAME
+          Value: !Ref DBUsername
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_DATASOURCE_PASSWORD
+          Value: !Ref DBPassword
+
+        # Raw hostname used by RdsUtilities to generate the IAM auth token.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: DB_ENDPOINT
+          Value: !Ref DBEndpoint
+
+        # The IAM-authenticated MySQL user created by V2__create_app_user.sql.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: DB_IAM_USERNAME
+          Value: compendium_app
+
+        # Activates the RdsIamDataSourceConfig bean and application-aws.yml overrides.
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_PROFILES_ACTIVE
+          Value: aws
+
 Outputs:
   EnvironmentURL:
     Description: Elastic Beanstalk environment endpoint (without http://)
@@ -145,3 +215,9 @@ Outputs:
     Value: !Ref ArtifactBucket
     Export:
       Name: CompendiumArtifactBucket
+
+  EBInstanceSecurityGroupId:
+    Description: Security group ID attached to EB EC2 instances; imported by db-stack
+    Value: !GetAtt EBInstanceSecurityGroup.GroupId
+    Export:
+      Name: CompendiumEBInstanceSGId
