@@ -5,8 +5,6 @@
 # The Flyway password is loaded from SSM Parameter Store at startup via spring-cloud-aws;
 # it is never stored as a plaintext EB environment variable.
 spring:
-  config:
-    import: "aws-parameterstore:/compendium/api/"
   cloud:
     aws:
       parameterstore:
