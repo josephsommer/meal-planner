@@ -122,7 +122,7 @@ Resources:
               # at startup. The SecureString is encrypted with the AWS-managed KMS key
               # (alias/aws/ssm); no explicit kms:Decrypt grant is needed for that key.
               - Effect: Allow
-                Action: ssm:GetParameter
+                Action: ssm:GetParametersByPath
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/compendium/api/db-master-password"
 
   EC2InstanceProfile:
