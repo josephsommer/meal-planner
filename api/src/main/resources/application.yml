@@ -12,6 +12,12 @@ spring:
     enabled: true
   cloud:
     aws:
+      region:
+        # Prevents spring-cloud-aws from querying the EC2 instance metadata service
+        # to discover the region. IMDS is unreachable in local dev and CI (not EC2),
+        # which causes core AWS auto-configurations to fail and blocks Flyway.
+        # application-aws.yml overrides this with ${AWS_DEFAULT_REGION} on EB.
+        static: us-east-1
       parameterstore:
         # Disabled by default so the spring-cloud-aws auto-config does not attempt
         # an SSM connection in local dev or Testcontainers tests. Enabled via
