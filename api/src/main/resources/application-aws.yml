@@ -2,11 +2,19 @@
 # The primary DataSource is supplied by RdsIamDataSourceConfig (IAM token auth).
 # Flyway gets its own connection here using the master user credentials so it
 # retains DDL privileges that the app user (compendium_app) does not have.
+# The Flyway password is loaded from SSM Parameter Store at startup via spring-cloud-aws;
+# it is never stored as a plaintext EB environment variable.
 spring:
+  config:
+    import: "aws-parameterstore:/compendium/api/"
+  cloud:
+    aws:
+      parameterstore:
+        enabled: true
   flyway:
     url: ${SPRING_DATASOURCE_URL}?useSSL=true&requireSSL=true
     user: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    password: ${db-master-password}  # loaded from SSM: /compendium/api/db-master-password
 
 db:
   endpoint: ${DB_ENDPOINT}
