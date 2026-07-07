@@ -78,6 +78,19 @@
             <version>2.31.43</version>
         </dependency>
 
+        <!-- spring-cloud-aws parameter store starter: loads SSM SecureStrings into
+             Spring's property environment at startup (before Flyway initializes).
+             Lets application-aws.yml pull the Flyway master-user password from SSM
+             so it never needs to live as a plaintext EB environment variable.
+             Disabled on the default profile (see application.yml); active only when
+             SPRING_PROFILES_ACTIVE=aws. Verify the latest 4.x version at
+             https://mvnrepository.com/artifact/io.awspring.cloud/spring-cloud-aws-starter-parameter-store -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-parameter-store</artifactId>
+            <version>4.0.2</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
