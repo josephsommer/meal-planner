@@ -9,6 +9,10 @@ spring:
     import: "aws-parameterstore:/compendium/api/"
   cloud:
     aws:
+      region:
+        # Overrides the static fallback in application.yml with the actual EB region.
+        # AWS_DEFAULT_REGION is set on EC2 instances by the EB platform.
+        static: ${AWS_DEFAULT_REGION:us-east-1}
       parameterstore:
         enabled: true
   flyway:
