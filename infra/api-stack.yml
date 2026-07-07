@@ -38,11 +38,6 @@ Parameters:
     Type: String
     Description: MySQL master username. Must match the value used when deploying compendium-db.
 
-  DBPassword:
-    Type: String
-    NoEcho: true
-    Description: MySQL master password. Must match the value used when deploying compendium-db.
-
 Resources:
 
   # Explicit security group for the EB EC2 instances. EB auto-creates one by default,
@@ -66,6 +61,8 @@ Resources:
 
   ArtifactBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    # DependsOn ensures the instance role ARN is available before this policy is created.
+    DependsOn: EC2InstanceRole
     Properties:
       Bucket: !Ref ArtifactBucket
       PolicyDocument:
@@ -73,9 +70,21 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/service-role/aws-elasticbeanstalk-service-role"
-            Action: s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${ArtifactBucketName}/*"
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:role/service-role/aws-elasticbeanstalk-service-role"
+                # EC2 instance role downloads the application bundle from S3 at deploy time.
+                # Referencing it here via GetAtt guarantees the ARN is correct.
+                - !GetAtt EC2InstanceRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:GetBucketVersioning
+              - s3:ListBucket
+              - s3:ListBucketVersions
+            Resource:
+              - !Sub "arn:aws:s3:::${ArtifactBucketName}/*"
+              - !Sub "arn:aws:s3:::${ArtifactBucketName}"
+
 
 
   # IAM role assumed by the EC2 instance running the app.
@@ -105,6 +114,16 @@ Resources:
               - Effect: Allow
                 Action: rds-db:connect
                 Resource: !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/compendium_app"
+        - PolicyName: compendium-ssm-read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allows spring-cloud-aws to fetch the Flyway master-user password from SSM
+              # at startup. The SecureString is encrypted with the AWS-managed KMS key
+              # (alias/aws/ssm); no explicit kms:Decrypt grant is needed for that key.
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/compendium/api/db-master-password"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -124,7 +143,8 @@ Resources:
     DependsOn: EC2InstanceProfile
     Properties:
       ApplicationName: compendium-api
-      EnvironmentName: compendium-api-prod
+      # must be changed or removed every deploy
+      EnvironmentName: compendium-api-001
       SolutionStackName: !Ref SolutionStackName
       Tier:
         Name: WebServer
@@ -174,8 +194,10 @@ Resources:
           OptionName: CORS_ALLOWED_ORIGIN
           Value: !Ref CorsAllowedOrigin
 
-        # Flyway reads these to run migrations as the master user (password auth).
-        # The app DataSource uses IAM token auth instead — see RdsIamDataSourceConfig.
+        # Flyway reads these to connect as the master user (password auth).
+        # The password itself is fetched from SSM by spring-cloud-aws at startup —
+        # see application-aws.yml. The app DataSource uses IAM token auth instead;
+        # see RdsIamDataSourceConfig.
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SPRING_DATASOURCE_URL
           Value: !Sub "jdbc:mysql://${DBEndpoint}:3306/compendium"
@@ -183,10 +205,6 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SPRING_DATASOURCE_USERNAME
           Value: !Ref DBUsername
-
-        - Namespace: aws:elasticbeanstalk:application:environment
-          OptionName: SPRING_DATASOURCE_PASSWORD
-          Value: !Ref DBPassword
 
         # Raw hostname used by RdsUtilities to generate the IAM auth token.
         - Namespace: aws:elasticbeanstalk:application:environment

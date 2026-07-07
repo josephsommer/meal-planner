@@ -10,6 +10,13 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  cloud:
+    aws:
+      parameterstore:
+        # Disabled by default so the spring-cloud-aws auto-config does not attempt
+        # an SSM connection in local dev or Testcontainers tests. Enabled via
+        # application-aws.yml when SPRING_PROFILES_ACTIVE=aws.
+        enabled: false
 
 server:
   port: 8080
