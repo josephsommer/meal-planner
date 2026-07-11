@@ -19,10 +19,12 @@ spring:
     url: ${SPRING_DATASOURCE_URL}?useSSL=true&requireSSL=true
     user: ${SPRING_DATASOURCE_USERNAME}
     password: ${db-master-password}  # loaded from SSM: /compendium/api/db-master-password
-    # db/migration/aws holds migrations that depend on real RDS features (e.g. the
-    # AWSAuthenticationPlugin IAM user). They only run under this profile, never
-    # against the Testcontainers/local MySQL used by tests and CI.
-    locations: classpath:db/migration,classpath:db/migration/aws
+    # db/aws-migration holds migrations that depend on real RDS features (e.g. the
+    # AWSAuthenticationPlugin IAM user). It's a sibling of db/migration, not a
+    # subdirectory — Flyway scans locations recursively, so a subdirectory would
+    # still be picked up by the default classpath:db/migration location used by
+    # tests/CI. Keeping it separate is the only way to make it aws-profile-only.
+    locations: classpath:db/migration,classpath:db/aws-migration
 
 db:
   endpoint: ${DB_ENDPOINT}
