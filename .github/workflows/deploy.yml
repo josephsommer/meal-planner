@@ -105,11 +105,31 @@ jobs:
               S3Bucket="${{ secrets.EB_ARTIFACT_BUCKET }}",S3Key="compendium-api-${{ steps.version.outputs.release_version }}.jar" \
             --auto-create-application
 
+      - name: Resolve current EB environment name
+        # The CloudFormation-managed environment gets recreated under a new
+        # name whenever an immutable option setting changes (see the comment
+        # on EBEnvironment in infra/api-stack.yml), so the name can't be
+        # pinned in a secret. Look up whichever environment is currently
+        # live instead — this app has exactly one non-terminated environment
+        # at a time.
+        id: eb_env
+        run: |
+          ENV_NAME=$(aws elasticbeanstalk describe-environments \
+            --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+            --query "Environments[?Status!='Terminated'] | [0].EnvironmentName" \
+            --output text)
+          if [ -z "$ENV_NAME" ] || [ "$ENV_NAME" = "None" ]; then
+            echo "No active EB environment found for application ${{ secrets.EB_APPLICATION_NAME }}" >&2
+            exit 1
+          fi
+          echo "Resolved environment: $ENV_NAME"
+          echo "environment_name=$ENV_NAME" >> $GITHUB_OUTPUT
+
       - name: Deploy to EB environment
         run: |
           aws elasticbeanstalk update-environment \
             --application-name ${{ secrets.EB_APPLICATION_NAME }} \
-            --environment-name ${{ secrets.EB_ENVIRONMENT_NAME }} \
+            --environment-name ${{ steps.eb_env.outputs.environment_name }} \
             --version-label "${{ steps.version.outputs.release_version }}"
 
       - name: Wait for EB environment to become Ready
@@ -119,7 +139,7 @@ jobs:
           for i in $(seq 1 40); do
             STATUS=$(aws elasticbeanstalk describe-environments \
               --application-name ${{ secrets.EB_APPLICATION_NAME }} \
-              --environment-names ${{ secrets.EB_ENVIRONMENT_NAME }} \
+              --environment-names ${{ steps.eb_env.outputs.environment_name }} \
               --query "Environments[0].Status" --output text)
             echo "EB status: $STATUS (attempt $i/40)"
             [ "$STATUS" = "Ready" ] && exit 0
