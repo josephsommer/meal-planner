@@ -103,7 +103,35 @@ jobs:
             --version-label "${{ steps.version.outputs.release_version }}" \
             --source-bundle \
               S3Bucket="${{ secrets.EB_ARTIFACT_BUCKET }}",S3Key="compendium-api-${{ steps.version.outputs.release_version }}.jar" \
-            --auto-create-application
+            --auto-create-application \
+            --process
+
+      - name: Wait for application version to process
+        # --process makes EB validate the S3 bundle up front (readable,
+        # well-formed) instead of deferring that to the deploy step, where
+        # a failure shows up as an opaque environment-health error instead
+        # of a StatusReason we can print here.
+        run: |
+          for i in $(seq 1 20); do
+            STATUS=$(aws elasticbeanstalk describe-application-versions \
+              --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+              --version-labels "${{ steps.version.outputs.release_version }}" \
+              --query "ApplicationVersions[0].Status" --output text)
+            echo "Application version status: $STATUS (attempt $i/20)"
+            if [ "$STATUS" = "PROCESSED" ]; then
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              REASON=$(aws elasticbeanstalk describe-application-versions \
+                --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+                --version-labels "${{ steps.version.outputs.release_version }}" \
+                --query "ApplicationVersions[0].StatusReason" --output text)
+              echo "Application version processing failed: $REASON" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for application version to process." && exit 1
 
       - name: Resolve current EB environment name
         # The CloudFormation-managed environment gets recreated under a new
@@ -134,15 +162,31 @@ jobs:
 
       - name: Wait for EB environment to become Ready
         # Poll every 15 s for up to 10 min. EB returns "Updating" while
-        # deploying and "Ready" when the new version is serving traffic.
+        # deploying and "Ready" when it's done processing the request —
+        # but "Ready" alone doesn't mean the new version actually rolled
+        # out: EB can silently no-op an update (e.g. an S3 permission
+        # error on the source bundle) and settle back on "Ready" with the
+        # old VersionLabel still in place. Check VersionLabel and Health
+        # too so that case fails the job instead of reporting green.
         run: |
+          EXPECTED_VERSION="${{ steps.version.outputs.release_version }}"
           for i in $(seq 1 40); do
-            STATUS=$(aws elasticbeanstalk describe-environments \
+            read -r STATUS HEALTH VERSION_LABEL <<< $(aws elasticbeanstalk describe-environments \
               --application-name ${{ secrets.EB_APPLICATION_NAME }} \
               --environment-names ${{ steps.eb_env.outputs.environment_name }} \
-              --query "Environments[0].Status" --output text)
-            echo "EB status: $STATUS (attempt $i/40)"
-            [ "$STATUS" = "Ready" ] && exit 0
+              --query "Environments[0].[Status,Health,VersionLabel]" --output text)
+            echo "EB status: $STATUS, health: $HEALTH, version: $VERSION_LABEL (attempt $i/40)"
+            if [ "$STATUS" = "Ready" ]; then
+              if [ "$VERSION_LABEL" != "$EXPECTED_VERSION" ]; then
+                echo "EB settled on Ready but VersionLabel is '$VERSION_LABEL', expected '$EXPECTED_VERSION'. The deploy did not actually roll out — check the EB environment's Events tab in the console." >&2
+                exit 1
+              fi
+              if [ "$HEALTH" = "Red" ]; then
+                echo "EB deployed $EXPECTED_VERSION but environment health is Red." >&2
+                exit 1
+              fi
+              exit 0
+            fi
             sleep 15
           done
           echo "Timed out waiting for EB to become Ready." && exit 1
