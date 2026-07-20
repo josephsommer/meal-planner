@@ -87,8 +87,10 @@ Resources:
 
 
 
-  # IAM role assumed by the EC2 instance running the app.
-  # The instance needs this to write CloudWatch logs and read EB config.
+  # IAM role assumed by the EC2 instance running the app. AWS no longer
+  # auto-creates a default aws-elasticbeanstalk-ec2-role, so this is defined
+  # and owned here rather than assumed to pre-exist. Carries the same three
+  # managed policies the EB console's wizard used to attach by default.
   EC2InstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -101,9 +103,9 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        # Grants the instance permission to write logs to S3/CloudWatch
-        # and read EB configuration. Minimum required for a web tier.
         - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker
       Policies:
         - PolicyName: compendium-rds-iam-auth
           PolicyDocument:
@@ -144,7 +146,7 @@ Resources:
     Properties:
       ApplicationName: compendium-api
       # must be changed or removed every deploy
-      EnvironmentName: compendium-api-001
+      EnvironmentName: compendium-api-prod
       SolutionStackName: !Ref SolutionStackName
       Tier:
         Name: WebServer
@@ -158,11 +160,7 @@ Resources:
           OptionName: IamInstanceProfile
           Value: !Ref EC2InstanceProfile
 
-        # Attach the named SG so the db-stack can reference it as the allowed MySQL source.
-        - Namespace: aws:autoscaling:launchconfiguration
-          OptionName: SecurityGroups
-          Value: !Ref EBInstanceSecurityGroup
-
+        
         # SingleInstance skips the Application Load Balancer.
         # An ALB costs ~$16/month. SingleInstance uses an Elastic IP instead,
         # which is free while the instance is running.
