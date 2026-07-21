@@ -71,7 +71,10 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.skip_release }}" = "true" ]; then
-            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+            # -q -DforceStdout is supposed to print only the raw value, but
+            # Maven sometimes leaks a stray log line ahead of it anyway.
+            # The real value is always the last non-empty line.
+            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout | tail -n 1)
           else
             VERSION=$(git describe --tags --abbrev=0 | sed 's/compendium-api-//')
           fi
