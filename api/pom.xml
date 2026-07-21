@@ -11,14 +11,14 @@
 
     <groupId>com.compendium</groupId>
     <artifactId>compendium-api</artifactId>
-    <version>0.0.14-SNAPSHOT</version>
+    <version>0.0.14</version>
     <packaging>jar</packaging>
 
     <scm>
         <connection>scm:git:https://github.com/josephsommer/meal-planner.git</connection>
         <developerConnection>scm:git:https://github.com/josephsommer/meal-planner.git</developerConnection>
         <url>https://github.com/josephsommer/meal-planner</url>
-        <tag>HEAD</tag>
+        <tag>compendium-api-0.0.14</tag>
     </scm>
 
     <distributionManagement>
