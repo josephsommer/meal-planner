@@ -32,9 +32,9 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       DBInstanceIdentifier: compendium-db
-      DBInstanceClass: db.t3.micro
+      DBInstanceClass: db.t4g.micro
       Engine: mysql
-      EngineVersion: '8.0'
+      EngineVersion: '8.4'
       AllocatedStorage: '20'
       StorageType: gp2
       DBName: compendium
