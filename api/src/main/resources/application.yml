@@ -32,13 +32,16 @@ cors:
 
 # Seeded into the users table by the V4__CreateAdminUser Flyway migration,
 # which BCrypt-hashes admin-password before insert — only the hash is ever
-# persisted. In prod (SPRING_PROFILES_ACTIVE=aws) admin-password is
-# overridden by the SSM SecureString at /compendium/api/admin-password,
-# picked up through the same aws-parameterstore import that already
-# supplies db-master-password (see application-aws.yml). The fallback
-# below is a local-dev-only default, never used once that override is set.
+# persisted. In prod (SPRING_PROFILES_ACTIVE=aws) admin-password comes from
+# the SSM SecureString at /compendium/api/admin-password, picked up through
+# the same aws-parameterstore import that already supplies db-master-password
+# (see application-aws.yml). Unlike admin-username, this has no fallback
+# default on purpose, matching how SPRING_DATASOURCE_* has none either:
+# a missing/misconfigured SSM value should fail startup, not silently seed
+# the admin account with a value baked into this file. Test-only defaults
+# for both properties live in src/test/resources/application.yml.
 admin-username: ${ADMIN_USERNAME:admin}
-admin-password: ${ADMIN_PASSWORD:changeme-local-only}
+admin-password: ${ADMIN_PASSWORD}
 
 # Datasource is not declared here. Spring Boot reads SPRING_DATASOURCE_URL,
 # SPRING_DATASOURCE_USERNAME, and SPRING_DATASOURCE_PASSWORD from the environment
