@@ -5,7 +5,6 @@ import com.compendium.api.domain.ArticleRepository;
 import com.compendium.api.domain.User;
 import com.compendium.api.domain.UserRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -27,8 +26,17 @@ public class ArticleService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "url must not be blank");
         }
 
+        // UsernameNotFoundException would be the Spring Security-idiomatic
+        // choice here, but it's not @ResponseStatus-annotated and there's no
+        // @ControllerAdvice in this codebase to map it — left uncaught it
+        // becomes a generic 500. This can only happen if the authenticated
+        // principal's row was deleted mid-session, which is as much a client
+        // problem (their session is stale) as a server one, so it gets the
+        // same ResponseStatusException treatment as the validation above
+        // rather than a distinct exception type.
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("No user with username " + username));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "No user with username " + username));
 
         return articleRepository.save(new Article(url, user));
     }
