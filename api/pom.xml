@@ -42,6 +42,14 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Session-based auth for the /api/articles endpoint. Only the -test
+             starter was present before now, so no filter chain was actually
+             active and @WithMockUser in existing tests was a no-op. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- JPA + Hibernate ORM layer -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
