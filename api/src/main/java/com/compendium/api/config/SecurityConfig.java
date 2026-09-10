@@ -1,5 +1,6 @@
 package com.compendium.api.config;
 
+import com.compendium.api.security.JsonAccessDeniedHandler;
 import com.compendium.api.security.JsonAuthenticationFailureHandler;
 import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
@@ -18,6 +19,7 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -34,7 +36,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             // Session-cookie auth is CSRF-exposed by default (a POST rides
@@ -60,17 +62,23 @@ public class SecurityConfig {
             // unauthenticated request to a login *page* (302), which makes
             // sense for a server-rendered app but not for a JSON client —
             // this makes an unauthenticated request to a protected endpoint
-            // a plain 401 instead.
-            .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+            // a plain 401 instead. accessDeniedHandler covers the sibling
+            // case: an authenticated session whose CSRF token is stale or
+            // missing, which otherwise falls through to Spring's default
+            // (non-JSON) 403 handling.
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                .accessDeniedHandler(new JsonAccessDeniedHandler(objectMapper)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/api/hello").permitAll()
                 .requestMatchers("/api/auth/csrf").permitAll()
                 .requestMatchers("/api/auth/login").permitAll()
                 .anyRequest().authenticated())
             .formLogin(form -> form
                 .loginProcessingUrl("/api/auth/login")
-                .successHandler(new JsonAuthenticationSuccessHandler())
-                .failureHandler(new JsonAuthenticationFailureHandler()))
+                .successHandler(new JsonAuthenticationSuccessHandler(objectMapper))
+                .failureHandler(new JsonAuthenticationFailureHandler(objectMapper)))
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
                 .logoutSuccessHandler(new JsonLogoutSuccessHandler()));
@@ -83,6 +91,9 @@ public class SecurityConfig {
     // separate CorsFilter can't reliably answer a preflight OPTIONS request
     // before Security rejects it as unauthenticated. Wiring CORS through
     // HttpSecurity.cors(...) instead makes Security itself preflight-aware.
+    // Registration stays scoped to /api/**, same as the filter it replaced —
+    // there's no reason to send credentialed CORS headers on /actuator/** or
+    // any other non-API path.
     private CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(allowedOrigin));
@@ -92,7 +103,7 @@ public class SecurityConfig {
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
+        source.registerCorsConfiguration("/api/**", config);
         return source;
     }
 }
