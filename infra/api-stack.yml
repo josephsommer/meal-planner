@@ -120,12 +120,19 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Allows spring-cloud-aws to fetch the Flyway master-user password from SSM
-              # at startup. The SecureString is encrypted with the AWS-managed KMS key
+              # Allows spring-cloud-aws to fetch secrets from SSM at startup via
+              # its aws-parameterstore:/compendium/api/ import (application-aws.yml) —
+              # currently db-master-password (Flyway's connection) and
+              # admin-password (hashed into the seeded admin user by
+              # V4__CreateAdminUser). GetParametersByPath acts on the path
+              # itself, so the resource must be the path prefix with a
+              # wildcard, not a specific parameter name — a bare parameter
+              # name here wouldn't actually match the path-style request.
+              # SecureStrings are encrypted with the AWS-managed KMS key
               # (alias/aws/ssm); no explicit kms:Decrypt grant is needed for that key.
               - Effect: Allow
                 Action: ssm:GetParametersByPath
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/compendium/api/db-master-password"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/compendium/api/*"
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
