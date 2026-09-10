@@ -37,4 +37,15 @@ class HelloControllerIT {
                 .andExpect(jsonPath("$.message").value("Hello from the database!"))
                 .andExpect(jsonPath("$.timestamp").exists());
     }
+
+    // web/src/App.tsx fetches this unauthenticated on every page load — it's
+    // the homepage greeting, not something behind a login wall. The test
+    // above alone wouldn't catch a regression here: @WithMockUser makes it
+    // pass regardless of whether SecurityConfig actually permitAll's this
+    // path, which is exactly what broke once session auth was added.
+    @Test
+    void hello_isAccessibleWithoutAuthentication() throws Exception {
+        mockMvc.perform(get("/api/hello"))
+                .andExpect(status().isOk());
+    }
 }
