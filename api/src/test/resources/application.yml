@@ -1,0 +1,8 @@
+# Test-only defaults, merged on top of src/main/resources/application.yml.
+# admin-password has no default there on purpose (see the comment next to
+# it) — every @SpringBootTest that boots the full context runs
+# V4__CreateAdminUser, so tests need *some* value. Tests that care what the
+# seeded admin's credentials actually are (AuthenticationIT) override these
+# explicitly via @TestPropertySource rather than relying on this value.
+admin-username: test-admin
+admin-password: test-only-password
