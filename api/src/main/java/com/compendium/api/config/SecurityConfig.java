@@ -1,7 +1,5 @@
 package com.compendium.api.config;
 
-import com.compendium.api.security.JsonAccessDeniedHandler;
-import com.compendium.api.security.JsonAuthenticationFailureHandler;
 import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,9 +11,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -41,44 +38,37 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             // Session-cookie auth is CSRF-exposed by default (a POST rides
             // along with whatever cookies the browser already has), so this
-            // stays on rather than being disabled for convenience.
-            // CookieCsrfTokenRepository is the standard fit for a JSON SPA
-            // that can't render a hidden form field: the token lives in a
-            // JS-readable cookie (withHttpOnlyFalse) and the SPA echoes it
-            // back as a header. See AuthController#csrf for how the SPA gets
-            // that cookie in the first place.
-            //
-            // The request handler must be the plain CsrfTokenRequestAttributeHandler,
-            // not the XorCsrfTokenRequestAttributeHandler Spring Security 6
-            // defaults to: Xor BREACH-masks the token it hands out, so it
-            // expects whatever comes back in the header to be masked too.
-            // That's fine for a server-rendered form (which reads the masked
-            // value and resubmits it verbatim) but not here, where the SPA
-            // just reads the raw cookie value and echoes that back as-is.
-            .csrf(csrf -> csrf
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
-            // formLogin()'s default AuthenticationEntryPoint redirects an
-            // unauthenticated request to a login *page* (302), which makes
-            // sense for a server-rendered app but not for a JSON client —
-            // this makes an unauthenticated request to a protected endpoint
-            // a plain 401 instead. accessDeniedHandler covers the sibling
-            // case: an authenticated session whose CSRF token is stale or
-            // missing, which otherwise falls through to Spring's default
-            // (non-JSON) 403 handling.
+            // stays on rather than being disabled for convenience. spa() is
+            // Spring Security's built-in configuration for a JSON SPA: it
+            // stores the token in a JS-readable XSRF-TOKEN cookie, applies
+            // BREACH-safe masking on the way out while still accepting the
+            // raw cookie value echoed back in the header, and writes the
+            // cookie on every response — so no dedicated endpoint is needed
+            // to hand it out up front. See
+            // https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html#csrf-integration-javascript-spa
+            .csrf(csrf -> csrf.spa())
+            // formLogin()'s default AuthenticationEntryPoint/failureHandler
+            // both redirect (a login *page* for an unauthenticated request,
+            // a ?error page on bad credentials), which makes sense for a
+            // server-rendered app but not for a JSON client. Both get
+            // swapped for a plain 401 status here — the SPA only needs the
+            // status code, not a body, so this reuses built-in Spring
+            // Security classes rather than a custom JSON-writing handler.
+            // accessDeniedHandler (the sibling case: an authenticated
+            // session with a stale/missing CSRF token) is left at Spring's
+            // default, which already returns a plain 403 with no redirect.
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
-                .accessDeniedHandler(new JsonAccessDeniedHandler(objectMapper)))
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/api/hello").permitAll()
-                .requestMatchers("/api/auth/csrf").permitAll()
                 .requestMatchers("/api/auth/login").permitAll()
                 .anyRequest().authenticated())
             .formLogin(form -> form
                 .loginProcessingUrl("/api/auth/login")
                 .successHandler(new JsonAuthenticationSuccessHandler(objectMapper))
-                .failureHandler(new JsonAuthenticationFailureHandler(objectMapper)))
+                .failureHandler(new AuthenticationEntryPointFailureHandler(
+                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))))
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
                 .logoutSuccessHandler(new JsonLogoutSuccessHandler()));

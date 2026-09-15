@@ -62,8 +62,7 @@ class AuthenticationIT {
         Cookie csrfCookie = fetchCsrfCookie();
 
         mockMvc.perform(loginRequest("testadmin", "not-the-password", csrfCookie))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").exists());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -107,12 +106,12 @@ class AuthenticationIT {
                 .header("X-XSRF-TOKEN", csrfCookie.getValue());
     }
 
-    // GET /api/auth/csrf is permitAll and, per AuthController#csrf, forces
-    // CookieCsrfTokenRepository to actually write the XSRF-TOKEN cookie.
-    // Every state-changing request below resends this same cookie plus a
-    // matching X-XSRF-TOKEN header, mirroring what the SPA is expected to do.
+    // csrf.spa() (see SecurityConfig) writes the XSRF-TOKEN cookie on every
+    // response, so any permitAll GET forces it — no dedicated endpoint
+    // needed. Every state-changing request below resends this same cookie
+    // plus a matching X-XSRF-TOKEN header, mirroring what the SPA does.
     private Cookie fetchCsrfCookie() throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/auth/csrf"))
+        MvcResult result = mockMvc.perform(get("/api/hello"))
                 .andExpect(status().isOk())
                 .andReturn();
         Cookie cookie = result.getResponse().getCookie("XSRF-TOKEN");
