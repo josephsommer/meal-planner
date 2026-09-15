@@ -6,6 +6,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -15,9 +16,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// admin-password has no default in src/main/resources/application.yml on
+// purpose (see the comment next to it there), but every @SpringBootTest that
+// boots the full context runs V4__CreateAdminUser, which needs *some* value.
+// This test doesn't care what the seeded admin's credentials actually are
+// (AuthenticationIT does, and sets its own), just that migration succeeds.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
+@TestPropertySource(properties = {
+        "admin-username=test-admin",
+        "admin-password=test-only-password"
+})
 class HelloControllerIT {
 
     // Static so the container is shared across all tests in this class,
