@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.rds.RdsUtilities;
 
@@ -31,9 +32,23 @@ public class RdsIamDataSourceConfig {
     @Value("${db.region:us-east-1}")
     private String region;
 
+    // Unlike an RdsClient built via RdsClient.builder(), a standalone
+    // RdsUtilities instance doesn't fall back to the default credential
+    // chain on its own — it throws "CredentialProvider should be provided"
+    // unless one is set explicitly on the builder. Reusing the
+    // AwsCredentialsProvider bean spring-cloud-aws-autoconfigure already
+    // exposes (backed by the default chain, i.e. the EC2 instance role in
+    // prod) keeps this in sync with how every other AWS client in this app
+    // resolves credentials, rather than constructing a second one by hand.
+    private final AwsCredentialsProvider credentialsProvider;
+
     // Held as a field so refreshToken() can call setPassword() without going
     // back through the application context.
     private HikariDataSource pool;
+
+    public RdsIamDataSourceConfig(AwsCredentialsProvider credentialsProvider) {
+        this.credentialsProvider = credentialsProvider;
+    }
 
     @Bean
     public DataSource dataSource() {
@@ -58,9 +73,15 @@ public class RdsIamDataSourceConfig {
         }
     }
 
-    private String generateToken() {
+    // Package-private rather than private so RdsIamDataSourceConfigTest can
+    // exercise it directly with a stand-in AwsCredentialsProvider, without
+    // needing a real DataSource/HikariPool or a live AWS environment —
+    // generating the token is a local SigV4 signing operation, not a network
+    // call.
+    String generateToken() {
         return RdsUtilities.builder()
                 .region(Region.of(region))
+                .credentialsProvider(credentialsProvider)
                 .build()
                 .generateAuthenticationToken(b -> b
                         .hostname(dbEndpoint)
