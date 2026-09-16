@@ -167,7 +167,17 @@ Resources:
           OptionName: IamInstanceProfile
           Value: !Ref EC2InstanceProfile
 
-        
+        # Without this, EB only attaches its own auto-generated security
+        # group to the instance, which db-stack's DBSecurityGroup ingress
+        # rule doesn't trust (it trusts EBInstanceSecurityGroup by ID,
+        # exported above as CompendiumEBInstanceSGId). Without this option,
+        # the app's DataSource can never reach RDS — every connection times
+        # out at the TCP level with no response, since the security group
+        # silently drops it rather than refusing it.
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref EBInstanceSecurityGroup
+
         # SingleInstance skips the Application Load Balancer.
         # An ALB costs ~$16/month. SingleInstance uses an Elastic IP instead,
         # which is free while the instance is running.
