@@ -4,7 +4,17 @@
 # retains DDL privileges that the app user (compendium_app) does not have.
 # The Flyway password is loaded from SSM Parameter Store at startup via spring-cloud-aws;
 # it is never stored as a plaintext EB environment variable.
+#
+# spring.flyway.* below is NOT consumed by Spring Boot's FlywayAutoConfiguration —
+# that autoconfiguration is excluded (see spring.autoconfigure.exclude) because it
+# unconditionally probes the primary DataSource bean while building itself, which
+# would construct RdsIamDataSourceConfig's pool (as compendium_app) before this
+# migration has run V2__create_app_user.sql. AwsFlywayBootstrapInitializer reads
+# these properties directly instead and runs Flyway before any bean definition —
+# including RdsIamDataSourceConfig's — exists. See that class for the full story.
 spring:
+  autoconfigure:
+    exclude: org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
   config:
     import: "aws-parameterstore:/compendium/api/"
   cloud:
