@@ -12,6 +12,14 @@ Parameters:
         aws elasticbeanstalk list-available-solution-stacks \
           --query "SolutionStacks[?contains(@,'Corretto 21') && contains(@,'Amazon Linux 2023')]"
     Default: "64bit Amazon Linux 2023 v5.14.1 running Corretto 21"
+  
+  SkipBucket:
+    Type: String
+    Description: >
+      If true, skip creating the S3 bucket for versioned JARs. Use this if you
+      already have a bucket and want to reuse it. Otherwise, leave false to
+      create a new bucket.
+    Default: "false"
 
   ArtifactBucketName:
     Type: String
@@ -38,6 +46,9 @@ Parameters:
     Type: String
     Description: MySQL master username. Must match the value used when deploying compendium-db.
 
+Conditions:
+  SkipBucket: !Equals [!Ref SkipBucket, "false"]
+
 Resources:
 
   # Explicit security group for the EB EC2 instances. EB auto-creates one by default,
@@ -54,6 +65,7 @@ Resources:
   # without a rebuild.
   ArtifactBucket:
     Type: AWS::S3::Bucket
+    Condition: SkipBucket
     Properties:
       BucketName: !Ref ArtifactBucketName
       VersioningConfiguration:
@@ -64,7 +76,7 @@ Resources:
     # DependsOn ensures the instance role ARN is available before this policy is created.
     DependsOn: EC2InstanceRole
     Properties:
-      Bucket: !Ref ArtifactBucket
+      Bucket: !Ref ArtifactBucketName
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -245,6 +257,7 @@ Outputs:
 
   ArtifactBucketName:
     Description: S3 bucket holding deployment JARs
+    Condition: SkipBucket
     Value: !Ref ArtifactBucket
     Export:
       Name: CompendiumArtifactBucket
