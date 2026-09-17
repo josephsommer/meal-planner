@@ -24,6 +24,9 @@ import java.sql.PreparedStatement;
  * algorithm ever changes, this migration doesn't silently drift out of sync
  * with it (BCrypt hashes are self-describing, so a mismatch wouldn't error,
  * it would just quietly stop matching what the rest of the app expects).
+ * This bean-reuse path is default/CI-profile-only: under the aws profile,
+ * AwsFlywayBootstrapInitializer hand-instantiates this class with a fresh
+ * BCryptPasswordEncoder before SecurityConfig's bean exists (see that class).
  *
  * Deliberately NOT in the db.migration package: that's the package Flyway's
  * own classpath scan of db/migration maps to, and this class would be
