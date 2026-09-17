@@ -50,6 +50,26 @@ public class RdsIamDataSourceConfig {
         this.credentialsProvider = credentialsProvider;
     }
 
+    // initializationFailTimeout(-1) is load-bearing, not an optimization.
+    // Spring Boot's own FlywayAutoConfiguration resolves an
+    // ObjectProvider<DataSource> unconditionally inside its flyway() bean
+    // method, via getIfUnique() — a real, non-deferrable lookup that
+    // eagerly constructs whatever DataSource bean exists, even though
+    // spring.flyway.url (set in application-aws.yml) means Flyway never
+    // actually ends up using it. (@Lazy on this bean does NOT help here:
+    // it only defers construction for proxy-based injection points, not a
+    // direct ObjectProvider.getIfUnique() call like Flyway's — see
+    // RdsIamDataSourceConfigLazyTest.) That means this pool would
+    // otherwise validate a connection, as compendium_app, before Flyway
+    // has run a single migration — a hard bootstrapping deadlock in prod,
+    // since compendium_app only exists once V2__create_app_user.sql has
+    // actually run. Setting initializationFailTimeout to a negative value
+    // makes HikariDataSource's constructor return immediately regardless
+    // of whether a connection can be established yet, deferring the real
+    // first connection attempt to whenever something actually calls
+    // getConnection() — by which point JPA's entityManagerFactory (which
+    // already depends on flyway completing first) will have already
+    // triggered Flyway's migrations via its own, separate connection.
     @Bean
     public DataSource dataSource() {
         HikariConfig cfg = new HikariConfig();
@@ -58,6 +78,7 @@ public class RdsIamDataSourceConfig {
         cfg.setPassword(generateToken());
         // Conservative pool size for t3.micro (1 vCPU, 1 GiB RAM).
         cfg.setMaximumPoolSize(5);
+        cfg.setInitializationFailTimeout(-1);
         pool = new HikariDataSource(cfg);
         return pool;
     }
