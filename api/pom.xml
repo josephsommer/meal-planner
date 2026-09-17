@@ -42,6 +42,19 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Generates the OpenAPI spec from routes/annotations at runtime
+             (GET /v3/api-docs, /v3/api-docs.yaml) and serves Swagger UI at
+             /swagger-ui.html, replacing a hand-maintained openapi.yaml that
+             would otherwise drift from the code. springdoc 2.x only supports
+             Spring Boot 3; this project is on Boot 4 (Spring Framework 7 /
+             Jakarta EE 11), so this needs the 3.x line. Verify the latest
+             3.x version at https://mvnrepository.com/artifact/org.springdoc/springdoc-openapi-starter-webmvc-ui -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
         <!-- Session-based auth for the /api/articles endpoint. Only the -test
              starter was present before now, so no filter chain was actually
              active and @WithMockUser in existing tests was a no-op. -->
