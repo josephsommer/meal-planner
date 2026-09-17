@@ -61,8 +61,9 @@ for your throughput.
 - **No secrets in the repo.** Use environment variables locally and
   AWS Secrets Manager / SSM Parameter Store in prod. Flag any code
   that would commit a secret.
-- **Conventional Commits** for commit messages (`feat:`, `fix:`,
-  `chore:`, `docs:`, `refactor:`, `test:`).
+- **Do not use Conventional Commits.** Commit messages should follow the format (scope): <description>.
+- **Concise comments.** Only comment on things that require further details beyond the code to maintain,
+  or deviate from expected norms.
 - **Branch per feature**, Check the branch before writing code, PR to `main`, squash merge.
 
 ## Prohibited
