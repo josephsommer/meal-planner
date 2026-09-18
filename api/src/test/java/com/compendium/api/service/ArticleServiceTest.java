@@ -13,6 +13,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,5 +68,40 @@ class ArticleServiceTest {
         assertThatThrownBy(() -> articleService.saveArticle("https://example.com/recipe", "ghost"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void getArticlesForUser_returnsOnlyThatUsersNonDeletedArticles() {
+        User user = new User("admin", "hash");
+        Article article = new Article("https://example.com/recipe", user);
+        when(articleRepository.findByCreatedBy_UsernameAndDeletedFalseOrderByCreatedAtDesc("admin"))
+                .thenReturn(List.of(article));
+
+        List<Article> articles = articleService.getArticlesForUser("admin");
+
+        assertThat(articles).containsExactly(article);
+    }
+
+    @Test
+    void deleteArticle_marksTheOwnedArticleAsDeleted() {
+        User user = new User("admin", "hash");
+        Article article = new Article("https://example.com/recipe", user);
+        when(articleRepository.findByIdAndCreatedBy_UsernameAndDeletedFalse(1L, "admin"))
+                .thenReturn(Optional.of(article));
+
+        articleService.deleteArticle(1L, "admin");
+
+        assertThat(article.isDeleted()).isTrue();
+        verify(articleRepository).save(article);
+    }
+
+    @Test
+    void deleteArticle_returns404WhenArticleIsMissingOrNotOwned() {
+        when(articleRepository.findByIdAndCreatedBy_UsernameAndDeletedFalse(1L, "admin"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> articleService.deleteArticle(1L, "admin"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
     }
 }

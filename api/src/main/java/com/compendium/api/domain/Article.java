@@ -32,6 +32,9 @@ public class Article {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(nullable = false)
+    private boolean deleted = false;
+
     protected Article() {}
 
     public Article(String url, User createdBy) {
@@ -53,5 +56,13 @@ public class Article {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isDeleted() {
+        return deleted;
+    }
+
+    public void markDeleted() {
+        this.deleted = true;
     }
 }
