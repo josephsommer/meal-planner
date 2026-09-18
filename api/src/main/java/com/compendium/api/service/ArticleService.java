@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 @Service
 public class ArticleService {
 
@@ -39,5 +41,21 @@ public class ArticleService {
                         HttpStatus.UNAUTHORIZED, "No user with username " + username));
 
         return articleRepository.save(new Article(url, user));
+    }
+
+    public List<Article> getArticlesForUser(String username) {
+        return articleRepository.findByCreatedBy_UsernameAndDeletedFalseOrderByCreatedAtDesc(username);
+    }
+
+    // Scoping the lookup to the requesting user (rather than fetching by id
+    // alone and checking ownership after) means a wrong-owner id 404s the
+    // same way a nonexistent one does, instead of leaking via a 403 that an
+    // id belongs to someone else.
+    public void deleteArticle(Long id, String username) {
+        Article article = articleRepository.findByIdAndCreatedBy_UsernameAndDeletedFalse(id, username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No article with id " + id));
+
+        article.markDeleted();
+        articleRepository.save(article);
     }
 }
