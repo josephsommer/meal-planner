@@ -30,7 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @TestPropertySource(properties = {
         "admin-username=testadmin",
-        "admin-password=test-password"
+        "admin-password=test-password",
+        "internal.worker-secret=test-internal-secret"
 })
 class ArticleIT {
 

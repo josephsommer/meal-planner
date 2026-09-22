@@ -2,9 +2,11 @@ package com.compendium.api.config;
 
 import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
+import com.compendium.api.security.SharedSecretAuthFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -13,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -30,6 +33,35 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    // Handles the worker Lambda's callback (/api/internal/**) — a separate,
+    // higher-precedence chain rather than adding an exception to the main
+    // chain's permitAll list, since the auth mechanism (a shared secret
+    // header) and trust boundary (a server, not a browser session) are
+    // entirely different from everything else this app serves.
+    @Bean
+    @Order(1)
+    public SecurityFilterChain internalFilterChain(HttpSecurity http,
+            @Value("${internal.worker-secret}") String workerSecret) throws Exception {
+        http
+            // Without this, a chain's default matcher is "any request" — and
+            // since this chain is ordered first, it would intercept and gate
+            // EVERY request in the app, including /api/hello and login.
+            .securityMatcher("/api/internal/**")
+            // The default HttpSecurity has CSRF enabled even on a new chain.
+            // The Lambda has no browser session/XSRF-TOKEN cookie to echo
+            // back, so this must be off or every callback 403s on arrival.
+            .csrf(csrf -> csrf.disable())
+            // Constructed directly, not injected as a bean — see the class
+            // comment on SharedSecretAuthFilter for why that distinction
+            // actually matters here.
+            .addFilterBefore(new SharedSecretAuthFilter(workerSecret), UsernamePasswordAuthenticationFilter.class)
+            // The filter itself does the real check (403s before reaching
+            // here on a bad/missing secret); nothing left for Spring
+            // Security's own authorization layer to gate on this path.
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
     }
 
     @Bean
