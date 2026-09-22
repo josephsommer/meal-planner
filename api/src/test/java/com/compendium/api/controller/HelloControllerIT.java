@@ -26,7 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @TestPropertySource(properties = {
         "admin-username=test-admin",
-        "admin-password=test-only-password"
+        "admin-password=test-only-password",
+        "internal.worker-secret=test-internal-secret"
 })
 class HelloControllerIT {
 

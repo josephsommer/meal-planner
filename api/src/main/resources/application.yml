@@ -17,6 +17,15 @@ spring:
         # an SSM connection in local dev or Testcontainers tests. Enabled via
         # application-aws.yml when SPRING_PROFILES_ACTIVE=aws.
         enabled: false
+      region:
+        # ArticleService needs an SqsTemplate bean in every profile (it's not
+        # optional the way parameterstore is), and building that bean's
+        # underlying SqsAsyncClient resolves its region eagerly at startup —
+        # unlike credentials, which the AWS SDK only resolves lazily on the
+        # first actual call. Without a region set somewhere, local dev/test
+        # context startup fails outright. application-aws.yml sets the same
+        # default explicitly too; this is what local dev and tests fall back to.
+        static: ${AWS_DEFAULT_REGION:us-east-1}
 
 server:
   port: 8080
@@ -42,6 +51,23 @@ cors:
 # for both properties live in src/test/resources/application.yml.
 admin-username: ${ADMIN_USERNAME:admin}
 admin-password: ${ADMIN_PASSWORD}
+
+# Shared secret the worker Lambda sends as X-Internal-Secret on its callback
+# to /api/internal/** (see SharedSecretAuthFilter). Same no-default-outside-aws
+# convention as admin-password above: in prod this is overridden by the SSM
+# SecureString at /compendium/api/worker-shared-secret via the existing
+# aws-parameterstore import; a missing value should fail startup, not silently
+# accept an empty/guessable secret. Tests override via @TestPropertySource.
+internal:
+  worker-secret: ${WORKER_SHARED_SECRET}
+
+# URL of the SQS queue ArticleService publishes fetch jobs to, and the rescan
+# job (ArticleRescanConfig) republishes stuck articles / drains the DLQ from.
+# Not a secret — matches the existing convention of plain EB env vars for
+# non-sensitive config (see db.endpoint below).
+app:
+  article-fetch-queue-url: ${ARTICLE_FETCH_QUEUE_URL:}
+  article-fetch-dlq-url: ${ARTICLE_FETCH_DLQ_URL:}
 
 # Datasource is not declared here. Spring Boot reads SPRING_DATASOURCE_URL,
 # SPRING_DATASOURCE_USERNAME, and SPRING_DATASOURCE_PASSWORD from the environment
