@@ -1,6 +1,7 @@
 package com.compendium.api.controller;
 
 import com.compendium.api.domain.Article;
+import com.compendium.api.domain.FetchStatus;
 import com.compendium.api.service.ArticleService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -28,20 +29,30 @@ public class ArticleController {
 
     record CreateArticleRequest(String url) {}
 
-    record ArticleResponse(Long id, String url, Instant createdAt) {}
+    // No last_error field here on purpose — the raw failure reason (which
+    // could contain exception text or fragments of the target site's
+    // response) stays server-side; the client only ever needs to know the
+    // article failed, not why.
+    record ArticleResponse(Long id, String url, Instant createdAt, FetchStatus fetchStatus,
+            String title, String excerpt, String content) {}
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ArticleResponse create(@RequestBody CreateArticleRequest request, Authentication authentication) {
         Article article = articleService.saveArticle(request.url(), authentication.getName());
-        return new ArticleResponse(article.getId(), article.getUrl(), article.getCreatedAt());
+        return toResponse(article);
     }
 
     @GetMapping
     public List<ArticleResponse> list(Authentication authentication) {
         return articleService.getArticlesForUser(authentication.getName()).stream()
-                .map(article -> new ArticleResponse(article.getId(), article.getUrl(), article.getCreatedAt()))
+                .map(ArticleController::toResponse)
                 .toList();
+    }
+
+    private static ArticleResponse toResponse(Article article) {
+        return new ArticleResponse(article.getId(), article.getUrl(), article.getCreatedAt(),
+                article.getFetchStatus(), article.getTitle(), article.getExcerpt(), article.getContent());
     }
 
     @DeleteMapping("/{id}")
