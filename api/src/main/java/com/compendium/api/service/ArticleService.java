@@ -100,6 +100,15 @@ public class ArticleService {
         articleRepository.recordFailureIfPending(articleId, errorMessage, Instant.now());
     }
 
+    // Used by the rescan job's republish path (ArticleRescanConfig) to bump
+    // an article's staleness clock without a load-then-save of the whole
+    // entity — see the repository method's own comment for why that
+    // distinction matters here.
+    @Transactional
+    public void markEnqueuedIfPending(Long articleId) {
+        articleRepository.markEnqueuedIfPending(articleId, Instant.now());
+    }
+
     public List<Article> getArticlesForUser(String username) {
         return articleRepository.findByCreatedBy_UsernameAndDeletedFalseOrderByCreatedAtDesc(username);
     }

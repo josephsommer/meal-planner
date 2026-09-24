@@ -21,6 +21,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,15 +52,47 @@ class ArticleRescanConfigTest {
         Article stuck = new Article("https://example.com/recipe", new User("admin", "hash"));
         when(articleRepository.findByFetchStatusAndDeletedFalseAndLastEnqueuedAtBefore(eq(FetchStatus.PENDING), any(Instant.class)))
                 .thenReturn(List.of(stuck));
-        Instant enqueuedBefore = stuck.getLastEnqueuedAt();
 
         rescanConfig.rescan();
 
         ArgumentCaptor<ArticleFetchMessage> messageCaptor = ArgumentCaptor.forClass(ArticleFetchMessage.class);
         verify(sqsTemplate).send(eq("fetch-queue-url"), messageCaptor.capture());
         assertThat(messageCaptor.getValue().url()).isEqualTo("https://example.com/recipe");
-        assertThat(stuck.getLastEnqueuedAt()).isNotEqualTo(enqueuedBefore);
-        verify(articleRepository).save(stuck);
+        // Conditional update through the service, not a full entity save —
+        // guards against reverting a result the worker's callback may have
+        // just recorded concurrently (see ArticleRepository.markEnqueuedIfPending).
+        verify(articleService).markEnqueuedIfPending(stuck.getId());
+        verify(articleRepository, never()).save(any(Article.class));
+    }
+
+    @Test
+    void rescan_continuesToTheNextArticleWhenOnePublishFails() {
+        Article first = new Article("https://example.com/one", new User("admin", "hash"));
+        Article second = new Article("https://example.com/two", new User("admin", "hash"));
+        setId(first, 1L);
+        setId(second, 2L);
+        when(articleRepository.findByFetchStatusAndDeletedFalseAndLastEnqueuedAtBefore(eq(FetchStatus.PENDING), any(Instant.class)))
+                .thenReturn(List.of(first, second));
+        doThrow(new RuntimeException("SQS unreachable"))
+                .when(sqsTemplate).send(eq("fetch-queue-url"), eq(new ArticleFetchMessage(1L, "https://example.com/one")));
+
+        rescanConfig.rescan();
+
+        verify(articleService).markEnqueuedIfPending(2L);
+        verify(articleService, never()).markEnqueuedIfPending(1L);
+    }
+
+    // Article's id is @GeneratedValue with no public setter — fine for real
+    // persistence, but these two articles need distinguishable ids to
+    // verify per-article behavior without a real database.
+    private static void setId(Article article, Long id) {
+        try {
+            var field = Article.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(article, id);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test

@@ -44,4 +44,17 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
             WHERE a.id = :id AND a.fetchStatus = com.compendium.api.domain.FetchStatus.PENDING
             """)
     int recordFailureIfPending(@Param("id") Long id, @Param("errorMessage") String errorMessage, @Param("now") Instant now);
+
+    // Same conditional-UPDATE reasoning as above, for the rescan job's
+    // republish path: a load-then-save of the whole entity would write back
+    // every field of a (possibly by-then-stale) in-memory Article, silently
+    // reverting a result the worker's conditional callback update may have
+    // just recorded concurrently. Only the one column that actually needs
+    // bumping is touched, and only while still PENDING.
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Article a SET a.lastEnqueuedAt = :now
+            WHERE a.id = :id AND a.fetchStatus = com.compendium.api.domain.FetchStatus.PENDING
+            """)
+    int markEnqueuedIfPending(@Param("id") Long id, @Param("now") Instant now);
 }
