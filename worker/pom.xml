@@ -60,12 +60,15 @@
              transitive one via Maven's nearest-wins mediation, giving a
              current jsoup (which ArticleExtractor also needs directly, for
              Connection.ignoreHttpErrorStatusCode — not present in 1.11.2).
+             1.18.1 was flagged by CI's dependency-review check for
+             GHSA-pmhh-3w7g-xqp8 (Cleaner may expose markup with custom
+             raw-text elements), fixed in 1.23.1.
              Verify the latest 1.x version at
              https://mvnrepository.com/artifact/org.jsoup/jsoup -->
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
-            <version>1.18.1</version>
+            <version>1.23.1</version>
         </dependency>
 
         <!-- Parses the {articleId, url} SQS message body and serializes the
