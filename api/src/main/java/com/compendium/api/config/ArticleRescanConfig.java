@@ -70,23 +70,33 @@ public class ArticleRescanConfig {
                 .findByFetchStatusAndDeletedFalseAndLastEnqueuedAtBefore(FetchStatus.PENDING, cutoff);
 
         for (Article article : stuck) {
-            log.info("Republishing stuck-PENDING article {} to fetch queue", article.getId());
-            sqsTemplate.send(fetchQueueUrl, new ArticleFetchMessage(article.getId(), article.getUrl()));
-            // Bumped so this same article isn't picked up again next run
-            // before the new message gets a fair chance to be processed.
-            article.markEnqueued();
-            articleRepository.save(article);
+            try {
+                log.info("Republishing stuck-PENDING article {} to fetch queue", article.getId());
+                sqsTemplate.send(fetchQueueUrl, new ArticleFetchMessage(article.getId(), article.getUrl()));
+                // Conditional update (see ArticleService.markEnqueuedIfPending),
+                // not article.markEnqueued() + save() — a full entity save
+                // would write back every field of this possibly-by-now-stale
+                // in-memory Article, silently reverting a result the worker's
+                // conditional callback update may have just recorded
+                // concurrently between this loop's SELECT and this line.
+                articleService.markEnqueuedIfPending(article.getId());
+            } catch (RuntimeException e) {
+                // One article's publish failing (e.g. a transient SQS blip)
+                // shouldn't skip the rest of this batch or the DLQ drain
+                // below — it just stays PENDING and gets tried again next pass.
+                log.warn("Failed to republish stuck article {}, will retry next rescan pass", article.getId(), e);
+            }
         }
     }
 
     // The SqsTemplate bean's default acknowledgement mode deletes each
-    // message as part of receiveMany() itself, before this loop's DB update
-    // runs. Accepted simplification: on the rare chance the update below
-    // fails right after a message is received, that DLQ entry is gone and
-    // the article stays PENDING rather than FAILED. Guarding against that
-    // would mean standing up a second, manually-acknowledged SqsTemplate
-    // bean just for this path — not worth the complexity for a failure mode
-    // this unlikely in a portfolio project.
+    // returned message as part of receiveMany() itself, before this loop's
+    // per-message DB update runs. Accepted simplification: on the rare
+    // chance an update below fails, that DLQ entry is already gone and the
+    // article stays PENDING rather than FAILED. The per-message try/catch
+    // still matters despite that — without it, one failing update would
+    // abort the loop and lose every *other* already-deleted message in the
+    // same batch too, not just the one that failed.
     private void drainDeadLetterQueue() {
         // Blank in local/test profiles where no real queue is configured —
         // receiveMany() against a blank queue name/URL throws, which would
@@ -100,8 +110,13 @@ public class ArticleRescanConfig {
 
         for (Message<ArticleFetchMessage> message : messages) {
             ArticleFetchMessage payload = message.getPayload();
-            log.info("Draining DLQ message for article {}, marking FAILED if still PENDING", payload.articleId());
-            articleService.recordFetchFailure(payload.articleId(), "Exhausted SQS delivery attempts");
+            try {
+                log.info("Draining DLQ message for article {}, marking FAILED if still PENDING", payload.articleId());
+                articleService.recordFetchFailure(payload.articleId(), "Exhausted SQS delivery attempts");
+            } catch (RuntimeException e) {
+                log.warn("Failed to record DLQ failure for article {} (its message is already deleted from the DLQ)",
+                        payload.articleId(), e);
+            }
         }
     }
 }

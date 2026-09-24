@@ -42,6 +42,83 @@
             <artifactId>aws-lambda-java-events</artifactId>
             <version>${aws-lambda-java-events.version}</version>
         </dependency>
+
+        <!-- JVM/Kotlin port of Mozilla's Readability algorithm (ADR-0004).
+             Pulls kotlin-stdlib transitively (~1.5MB) — accepted, minor.
+             Last released 2021; functional but unmaintained upstream, a
+             known/accepted risk per ADR-0004. Verify at
+             https://mvnrepository.com/artifact/net.dankito.readability4j/readability4j -->
+        <dependency>
+            <groupId>net.dankito.readability4j</groupId>
+            <artifactId>readability4j</artifactId>
+            <version>1.0.8</version>
+        </dependency>
+
+        <!-- readability4j 1.0.8 transitively pulls jsoup 1.11.2 (2018) — jsoup
+             gets real security patches and readability4j hasn't bumped its
+             own dependency since. A direct declaration here wins over the
+             transitive one via Maven's nearest-wins mediation, giving a
+             current jsoup (which ArticleExtractor also needs directly, for
+             Connection.ignoreHttpErrorStatusCode — not present in 1.11.2).
+             Verify the latest 1.x version at
+             https://mvnrepository.com/artifact/org.jsoup/jsoup -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.1</version>
+        </dependency>
+
+        <!-- Parses the {articleId, url} SQS message body and serializes the
+             internal callback's request body. No Spring in this module
+             (ADR-0004: "Lambdas are light"), so this is added directly
+             rather than pulled in transitively via a web starter. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.2</version>
+        </dependency>
+
+        <!-- Reads the shared callback secret from SSM at cold start (decision
+             5 in the async-extraction spec) via this Lambda's own narrowly
+             scoped IAM grant. Version comes from the AWS SDK BOM above. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssm</artifactId>
+        </dependency>
+
+        <!-- This module had no test framework at all until now — nothing
+             else in worker/pom.xml pulls in a JUnit engine transitively. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.26.3</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- 5.14.2 bundles a Byte Buddy that doesn't recognize JDK 25 yet
+             ("Unknown Java version: 0"); 5.20.0 does. -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.20.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- assertj-core transitively pulls byte-buddy 1.14.18, which is
+             what actually can't recognize JDK 25 (not mockito-core's own,
+             newer transitive byte-buddy) — both are direct test deps at the
+             same depth, and assertj's wins Maven's nearest-wins tie-break by
+             declaration order. Pinning it directly here is unambiguous. -->
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>1.17.8</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -62,6 +139,22 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <!-- Maven's own bundled default surefire version predates JUnit 5
+                 support; this module has no parent POM (unlike api/) to
+                 supply a newer one, so it needs pinning explicitly. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <!-- Mockito's inline mock maker self-attaches a Java
+                         agent at runtime; JDK 21+ restricts dynamic agent
+                         loading by default, which api/ doesn't need to set
+                         explicitly since spring-boot-starter-parent already
+                         configures it for its own surefire execution. -->
+                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>

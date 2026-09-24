@@ -30,7 +30,7 @@ jobs:
         working-directory: api
 
   worker-build:
-    name: Worker build
+    name: Worker build & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +40,8 @@ jobs:
           distribution: temurin
           cache: maven
           cache-dependency-path: worker/pom.xml
-      - name: Build
-        run: ./mvnw --no-transfer-progress package -DskipTests
+      - name: Build and test
+        run: ./mvnw --no-transfer-progress package
         working-directory: worker
 
   web-build:
