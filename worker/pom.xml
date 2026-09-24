@@ -71,11 +71,17 @@
         <!-- Parses the {articleId, url} SQS message body and serializes the
              internal callback's request body. No Spring in this module
              (ADR-0004: "Lambdas are light"), so this is added directly
-             rather than pulled in transitively via a web starter. -->
+             rather than pulled in transitively via a web starter.
+             2.18.2 was flagged by CI's dependency-review check: several
+             advisories including CVE-2026-54512, a PolymorphicTypeValidator
+             allow-list bypass via generic type parameters (high severity),
+             fixed in 2.18.8+. Bumped straight to the current stable line.
+             Verify the latest version at
+             https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.18.2</version>
+            <version>2.22.2</version>
         </dependency>
 
         <!-- Reads the shared callback secret from SSM at cold start (decision
