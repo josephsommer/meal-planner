@@ -4,6 +4,8 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSBatchResponse;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
+import com.amazonaws.services.lambda.runtime.logging.LogLevel;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.ssm.SsmClient;
 
@@ -63,11 +65,11 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, SQSBatchResp
         ArticleFetchMessage payload;
         try {
             payload = objectMapper.readValue(message.getBody(), ArticleFetchMessage.class);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             // A malformed body will never parse no matter how many times SQS
             // redelivers it, and there's no articleId to report a failure
             // against either — logged and dropped rather than retried forever.
-            context.getLogger().log("Unparseable message " + message.getMessageId() + ": " + e.getMessage());
+            context.getLogger().log("Unparseable message " + message.getMessageId() + ": " + e.getMessage(), LogLevel.ERROR);
             return;
         }
 

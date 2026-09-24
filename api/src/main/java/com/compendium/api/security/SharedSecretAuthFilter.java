@@ -11,15 +11,16 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
-// Gates /api/internal/** (see SecurityConfig's internalFilterChain, which
-// constructs this directly rather than injecting it as a bean — a Filter
-// that's also a Spring-managed bean gets auto-registered by Spring Boot as a
-// *global* servlet filter applied to every request, regardless of how it's
-// separately wired into one specific SecurityFilterChain. That would gate
-// every endpoint in the app behind the internal secret, not just this one).
-// There is exactly one caller — the worker Lambda — so a bare shared-secret
-// header check is the simplest thing that works; no Authentication object or
-// entry point is needed for a single machine-to-machine caller.
+// Gates /api/internal/** (see SecurityConfig's internalFilterChain). Declared
+// as a bean there rather than a @Component so its Filter auto-registration
+// can be explicitly disabled (SecurityConfig.sharedSecretAuthFilterRegistration)
+// — Spring Boot otherwise registers any Filter bean globally, regardless of
+// how it's separately wired into one specific SecurityFilterChain, which
+// would gate every endpoint in the app behind the internal secret, not just
+// this one. There is exactly one caller — the worker Lambda — so a bare
+// shared-secret header check is the simplest thing that works; no
+// Authentication object or entry point is needed for a single
+// machine-to-machine caller.
 public class SharedSecretAuthFilter extends OncePerRequestFilter {
 
     private static final String HEADER_NAME = "X-Internal-Secret";

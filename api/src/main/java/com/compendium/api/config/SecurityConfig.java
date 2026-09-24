@@ -4,6 +4,7 @@ import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
 import com.compendium.api.security.SharedSecretAuthFilter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -35,6 +36,24 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Bean
+    public SharedSecretAuthFilter sharedSecretAuthFilter(@Value("${internal.worker-secret}") String workerSecret) {
+        return new SharedSecretAuthFilter(workerSecret);
+    }
+
+    // Spring Boot auto-registers any Filter bean as a *global* servlet
+    // filter applied to every request, regardless of how it's separately
+    // wired into one specific SecurityFilterChain via addFilterBefore below.
+    // Without disabling that here, this filter would gate every endpoint in
+    // the app behind the internal secret, not just /api/internal/**.
+    @Bean
+    public FilterRegistrationBean<SharedSecretAuthFilter> sharedSecretAuthFilterRegistration(
+            SharedSecretAuthFilter filter) {
+        FilterRegistrationBean<SharedSecretAuthFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
     // Handles the worker Lambda's callback (/api/internal/**) — a separate,
     // higher-precedence chain rather than adding an exception to the main
     // chain's permitAll list, since the auth mechanism (a shared secret
@@ -42,8 +61,7 @@ public class SecurityConfig {
     // entirely different from everything else this app serves.
     @Bean
     @Order(1)
-    public SecurityFilterChain internalFilterChain(HttpSecurity http,
-            @Value("${internal.worker-secret}") String workerSecret) throws Exception {
+    public SecurityFilterChain internalFilterChain(HttpSecurity http, SharedSecretAuthFilter filter) throws Exception {
         http
             // Without this, a chain's default matcher is "any request" — and
             // since this chain is ordered first, it would intercept and gate
@@ -53,10 +71,7 @@ public class SecurityConfig {
             // The Lambda has no browser session/XSRF-TOKEN cookie to echo
             // back, so this must be off or every callback 403s on arrival.
             .csrf(csrf -> csrf.disable())
-            // Constructed directly, not injected as a bean — see the class
-            // comment on SharedSecretAuthFilter for why that distinction
-            // actually matters here.
-            .addFilterBefore(new SharedSecretAuthFilter(workerSecret), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class)
             // The filter itself does the real check (403s before reaching
             // here on a bad/missing secret); nothing left for Spring
             // Security's own authorization layer to gate on this path.
