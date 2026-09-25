@@ -194,6 +194,98 @@ jobs:
           done
           echo "Timed out waiting for EB to become Ready." && exit 1
 
+  deploy-worker:
+    name: Release & deploy worker Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # release:prepare inspects full git history; shallow clone breaks it.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: worker/pom.xml
+
+      - name: Configure Git identity for release commits
+        if: inputs.skip_release != true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Maven release:prepare + release:perform
+        if: inputs.skip_release != true
+        working-directory: worker
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./mvnw --no-transfer-progress --batch-mode \
+            release:prepare release:perform \
+            -DlocalCheckout=true \
+            -Dusername=${{ github.actor }} \
+            -Dpassword=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build JAR (release skipped)
+        if: inputs.skip_release == true
+        working-directory: worker
+        run: ./mvnw --no-transfer-progress --batch-mode package -DskipTests
+
+      - name: Extract version
+        id: version
+        working-directory: worker
+        shell: bash
+        run: |
+          if [ "${{ inputs.skip_release }}" = "true" ]; then
+            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout | tail -n 1)
+          else
+            VERSION=$(git describe --tags --abbrev=0 | sed 's/compendium-worker-//')
+          fi
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Locate JAR
+        id: jar
+        working-directory: worker
+        shell: bash
+        run: |
+          JAR=$(find "$(pwd)/target" -name "compendium-worker-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
+          echo "jar_path=$JAR" >> $GITHUB_OUTPUT
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload JAR to S3 artifact bucket
+        # Same bucket api-stack owns, worker/ prefix — no second bucket.
+        run: |
+          aws s3 cp ${{ steps.jar.outputs.jar_path }} \
+            s3://${{ secrets.EB_ARTIFACT_BUCKET }}/worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar
+
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name compendium-article-fetch \
+            --s3-bucket ${{ secrets.EB_ARTIFACT_BUCKET }} \
+            --s3-key worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar
+
+      - name: Wait for Lambda update to complete
+        # update-function-code is asynchronous — mirrors deploy-api's
+        # poll-until-PROCESSED step for the same reason.
+        run: |
+          for i in $(seq 1 20); do
+            STATUS=$(aws lambda get-function --function-name compendium-article-fetch \
+              --query 'Configuration.LastUpdateStatus' --output text)
+            echo "Lambda update status: $STATUS (attempt $i/20)"
+            if [ "$STATUS" = "Successful" ]; then exit 0; fi
+            if [ "$STATUS" = "Failed" ]; then echo "Lambda update failed" >&2; exit 1; fi
+            sleep 5
+          done
+          echo "Timed out waiting for Lambda update." && exit 1
+
   deploy-web:
     name: Build & deploy React SPA to S3
     runs-on: ubuntu-latest

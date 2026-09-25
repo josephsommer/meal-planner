@@ -9,6 +9,23 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
+    <scm>
+        <connection>scm:git:https://github.com/josephsommer/meal-planner.git</connection>
+        <developerConnection>scm:git:https://github.com/josephsommer/meal-planner.git</developerConnection>
+        <url>https://github.com/josephsommer/meal-planner</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <!-- No real Maven artifact repository for this project — release:perform's
+         default `deploy` goal needs some target configured or it fails. Same
+         harmless local-staging workaround api/pom.xml already uses. -->
+    <distributionManagement>
+        <repository>
+            <id>local-staging</id>
+            <url>file://${project.build.directory}/staging</url>
+        </repository>
+    </distributionManagement>
+
     <properties>
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
@@ -165,6 +182,36 @@
                     <argLine>-XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
             </plugin>
+            <!-- No parent POM (unlike api/, which inherits Spring Boot's
+                 dependency management), so the version is pinned explicitly
+                 here, matching how shade/surefire above already do. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-release-plugin</artifactId>
+                <version>3.1.1</version>
+                <configuration>
+                    <!-- Different prefix from api's compendium-api-@{...} tags —
+                         both projects' tags share one git repo/tag namespace. -->
+                    <tagNameFormat>compendium-worker-@{project.version}</tagNameFormat>
+                    <releaseProfiles>skip-tests</releaseProfiles>
+                    <goals>deploy</goals>
+                    <!-- Prevents the 2 release:prepare commits from re-triggering the deploy workflow -->
+                    <scmCommentPrefix>[skip ci] release: </scmCommentPrefix>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!-- worker's own tests already ran in ci.yml's worker-build job
+                 before deploy.yml ever triggers — no need to run them again
+                 inside release:perform's forked build. -->
+            <id>skip-tests</id>
+            <properties>
+                <skipTests>true</skipTests>
+                <maven.test.skip>true</maven.test.skip>
+            </properties>
+        </profile>
+    </profiles>
 </project>

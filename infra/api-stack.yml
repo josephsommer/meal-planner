@@ -46,6 +46,28 @@ Parameters:
     Type: String
     Description: MySQL master username. Must match the value used when deploying compendium-db.
 
+  ArticleFetchQueueArn:
+    Type: String
+    Description: >
+      ARN of the article-fetch SQS queue. From worker-stack, deployed separately:
+        aws cloudformation describe-stacks --stack-name compendium-worker \
+          --query "Stacks[0].Outputs[?OutputKey=='ArticleFetchQueueArn'].OutputValue" --output text
+
+  ArticleFetchQueueUrl:
+    Type: String
+    Description: >
+      Same lookup as above, OutputKey=ArticleFetchQueueUrl. Injected as ARTICLE_FETCH_QUEUE_URL.
+
+  ArticleFetchDLQArn:
+    Type: String
+    Description: >
+      Same lookup as above, OutputKey=ArticleFetchDLQArn.
+
+  ArticleFetchDLQUrl:
+    Type: String
+    Description: >
+      Same lookup as above, OutputKey=ArticleFetchDLQUrl. Injected as ARTICLE_FETCH_DLQ_URL.
+
 Conditions:
   SkipBucket: !Equals [!Ref SkipBucket, "false"]
 
@@ -145,6 +167,29 @@ Resources:
               - Effect: Allow
                 Action: ssm:GetParametersByPath
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/compendium/api/*"
+        - PolicyName: compendium-sqs-publish
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ArticleService.saveArticle publishes {articleId, url} here
+              # inline after persisting. Send-only — the app never
+              # receives/deletes its own published messages.
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref ArticleFetchQueueArn
+        - PolicyName: compendium-sqs-dlq-drain
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ArticleRescanConfig's scheduled job polls and deletes from
+              # the DLQ directly — a separate grant from the publish one
+              # above.
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Ref ArticleFetchDLQArn
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -247,6 +292,18 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SPRING_PROFILES_ACTIVE
           Value: aws
+
+        # Not a secret — the queue/DLQ URLs, unlike WORKER_SHARED_SECRET
+        # (already satisfied by the existing aws-parameterstore import,
+        # same as admin-password/db-master-password; deliberately not
+        # added here as a plain env var).
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: ARTICLE_FETCH_QUEUE_URL
+          Value: !Ref ArticleFetchQueueUrl
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: ARTICLE_FETCH_DLQ_URL
+          Value: !Ref ArticleFetchDLQUrl
 
 Outputs:
   EnvironmentURL:
