@@ -106,7 +106,7 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.26.3</version>
+            <version>3.27.7</version>
             <scope>test</scope>
         </dependency>
         <!-- 5.14.2 bundles a Byte Buddy that doesn't recognize JDK 25 yet
