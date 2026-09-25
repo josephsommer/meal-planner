@@ -4,21 +4,13 @@ Description: >
   readable text (ADR-0004). Always-free-tier: no VPC config on the Lambda,
   no reserved/provisioned concurrency.
 
-  Deploy AFTER api-stack (reuses its artifact S3 bucket via ArtifactBucketName,
-  and needs its EB environment URL for InternalApiBaseUrl). api-stack itself
-  must then be updated a second time, after this stack exists, to add the
+  Deploy AFTER api-stack (imports its artifact S3 bucket export, and needs
+  its EB environment URL for InternalApiBaseUrl). api-stack itself must
+  then be updated a second time, after this stack exists, to add the
   compendium-sqs-publish/compendium-sqs-dlq-drain policies and the
   ARTICLE_FETCH_QUEUE_URL/ARTICLE_FETCH_DLQ_URL env vars.
 
 Parameters:
-  ArtifactBucketName:
-    Type: String
-    Description: >
-      Same S3 bucket api-stack owns (its ArtifactBucketName parameter/output).
-      Passed as a plain value here rather than !ImportValue, since api-stack's
-      own ArtifactBucketName export is Condition: SkipBucket-gated and not
-      guaranteed to exist.
-
   ArtifactObjectKey:
     Type: String
     Description: >
@@ -142,7 +134,11 @@ Resources:
       Handler: com.compendium.worker.SqsConsumerHandler::handleRequest
       Role: !GetAtt WorkerLambdaRole.Arn
       Code:
-        S3Bucket: !Ref ArtifactBucketName
+        # api-stack's ArtifactBucketName export is always created (per Joe:
+        # the SkipBucket=true path isn't actually used in practice), so
+        # ImportValue is safe here — unlike the queue/DLQ/role values below,
+        # which are genuinely new and passed as Parameters (decision 8).
+        S3Bucket: !ImportValue CompendiumArtifactBucket
         S3Key: !Ref ArtifactObjectKey
       # jsoup/Kotlin-stdlib startup cost — free tier is GB-seconds, not
       # just invocation count, so this is worth watching if it ever grows.
