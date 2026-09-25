@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  SQS queue + DLQ + Lambda worker that fetches article URLs and extracts
+  readable text (ADR-0004). Always-free-tier: no VPC config on the Lambda,
+  no reserved/provisioned concurrency.
+
+  Deploy AFTER api-stack (reuses its artifact S3 bucket via ArtifactBucketName,
+  and needs its EB environment URL for InternalApiBaseUrl). api-stack itself
+  must then be updated a second time, after this stack exists, to add the
+  compendium-sqs-publish/compendium-sqs-dlq-drain policies and the
+  ARTICLE_FETCH_QUEUE_URL/ARTICLE_FETCH_DLQ_URL env vars.
+
+Parameters:
+  ArtifactBucketName:
+    Type: String
+    Description: >
+      Same S3 bucket api-stack owns (its ArtifactBucketName parameter/output).
+      Passed as a plain value here rather than !ImportValue, since api-stack's
+      own ArtifactBucketName export is Condition: SkipBucket-gated and not
+      guaranteed to exist.
+
+  ArtifactObjectKey:
+    Type: String
+    Description: >
+      S3 key of the worker's shaded jar, under the worker/ prefix of the
+      artifact bucket above. worker/pom.xml has maven-release-plugin
+      (compendium-worker-<version>.jar, <version> changing on every
+      release), so there is no fixed default — pass whatever the current
+      released version's key is, e.g. worker/compendium-worker-0.0.1.jar.
+      For the very first deploy, before any release has run, use the
+      -SNAPSHOT jar built locally (see README.md's bootstrap step).
+
+  InternalApiBaseUrl:
+    Type: String
+    Description: >
+      Hostname of the API's EB environment, without http:// (same
+      convention as api-stack's DBEndpoint parameter). Obtained from:
+        aws cloudformation describe-stacks --stack-name compendium-api \
+          --query "Stacks[0].Outputs[?OutputKey=='EnvironmentURL'].OutputValue" --output text
+
+  SecretParameterName:
+    Type: String
+    Description: >
+      SSM parameter name (with leading slash) the Lambda reads at cold
+      start to resolve the worker-callback shared secret. Must already
+      exist as a SecureString (see README.md step 0b) — this stack does
+      not create it.
+    Default: "/compendium/api/worker-shared-secret"
+
+Resources:
+
+  # 14-day retention (the max) — mostly a formality now that the API's
+  # rescan job (ArticleRescanConfig) actively drains this every 5 minutes,
+  # but generous in case that job is ever paused/broken.
+  ArticleFetchDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: compendium-article-fetch-dlq
+      MessageRetentionPeriod: 1209600
+
+  ArticleFetchQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: compendium-article-fetch
+      # 6x the Lambda's 30s timeout below, per AWS's own guidance for
+      # sizing queue visibility timeout relative to consumer timeout.
+      VisibilityTimeout: 180
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ArticleFetchDLQ.Arn
+        maxReceiveCount: 3
+
+  # Declared explicitly (not left to the Lambda's implicit auto-create) so
+  # it can set a retention period — CloudWatch Logs storage isn't
+  # unlimited-free.
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/compendium-article-fetch
+      RetentionInDays: 14
+
+  WorkerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: compendium-worker-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: compendium-sqs-consume
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Scoped to the ONE fetch queue — the DLQ is drained by the
+              # API's rescan job (ArticleRescanConfig), never by this
+              # Lambda, so no DLQ permissions belong on this role.
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt ArticleFetchQueue.Arn
+        - PolicyName: compendium-ssm-secret-read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Exactly one parameter, unlike api-stack's compendium-ssm-read
+              # (a path prefix) — this role only ever needs the one
+              # callback secret, never db-master-password or admin-password.
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SecretParameterName}"
+        - PolicyName: compendium-worker-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Scoped to this function's own log group only — not the
+              # AWSLambdaBasicExecutionRole managed policy, which grants
+              # logs:* across every log group in the account.
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/compendium-article-fetch:*"
+      # No VPC config anywhere on this role or the function below, and no
+      # AWSLambdaVPCAccessExecutionRole / ec2:CreateNetworkInterface grant,
+      # and no rds-db:connect either. A VPC-attached Lambda needs a NAT
+      # gateway (~$32/mo) to keep reaching arbitrary public article URLs —
+      # breaks the free-tier constraint (CLAUDE.local.md). The worker never
+      # touches RDS directly, only via the HTTPS callback to the API.
+
+  ArticleFetchLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: WorkerLogGroup
+    Properties:
+      FunctionName: compendium-article-fetch
+      Runtime: java21
+      Handler: com.compendium.worker.SqsConsumerHandler::handleRequest
+      Role: !GetAtt WorkerLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref ArtifactObjectKey
+      # jsoup/Kotlin-stdlib startup cost — free tier is GB-seconds, not
+      # just invocation count, so this is worth watching if it ever grows.
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          INTERNAL_API_BASE_URL: !Sub "http://${InternalApiBaseUrl}"
+          INTERNAL_SECRET_PARAMETER_NAME: !Ref SecretParameterName
+      # No ReservedConcurrentExecutions, no Alias/Version +
+      # ProvisionedConcurrencyConfig — both cost money even at zero
+      # traffic, excluded on purpose for the free-tier constraint.
+
+  ArticleFetchEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt ArticleFetchQueue.Arn
+      FunctionName: !Ref ArticleFetchLambda
+      BatchSize: 5
+      # Without this, SQS ignores the handler's SQSBatchResponse partial
+      # results entirely and redelivers the whole batch on any failure,
+      # including messages that were already processed successfully.
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
+
+Outputs:
+  ArticleFetchQueueArn:
+    Description: Consumed by api-stack's compendium-sqs-publish inline policy
+    Value: !GetAtt ArticleFetchQueue.Arn
+    Export:
+      Name: CompendiumArticleFetchQueueArn
+
+  ArticleFetchQueueUrl:
+    Description: Injected into api-stack's EB environment as ARTICLE_FETCH_QUEUE_URL
+    Value: !Ref ArticleFetchQueue
+    Export:
+      Name: CompendiumArticleFetchQueueUrl
+
+  ArticleFetchDLQArn:
+    Description: Consumed by api-stack's compendium-sqs-dlq-drain inline policy
+    Value: !GetAtt ArticleFetchDLQ.Arn
+    Export:
+      Name: CompendiumArticleFetchDLQArn
+
+  ArticleFetchDLQUrl:
+    Description: Injected into api-stack's EB environment as ARTICLE_FETCH_DLQ_URL
+    Value: !Ref ArticleFetchDLQ
+    Export:
+      Name: CompendiumArticleFetchDLQUrl
+
+  WorkerLambdaRoleArn:
+    Description: >
+      Not currently consumed by any other stack (the Lambda's runtime role
+      has no reason to read the artifact S3 bucket — CloudFormation itself
+      resolves Code.S3Bucket/S3Key under the deploying principal's own
+      credentials, not this role). Exported anyway for visibility/future
+      debugging.
+    Value: !GetAtt WorkerLambdaRole.Arn
+    Export:
+      Name: CompendiumWorkerLambdaRoleArn
