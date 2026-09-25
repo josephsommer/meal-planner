@@ -80,7 +80,7 @@ aws cloudformation describe-stacks --profile compendium --stack-name compendium-
 ```
 
 ```
-aws cloudformation deploy --profile compendium --template-file infra/worker-stack.yml --stack-name compendium-worker --capabilities CAPABILITY_NAMED_IAM --parameter-overrides ArtifactBucketName=compendium-eb-artifacts-<ACCOUNT_ID> ArtifactObjectKey=worker/compendium-worker-0.0.1-SNAPSHOT.jar InternalApiBaseUrl=<api-stack EnvironmentURL from above>
+aws cloudformation deploy --profile compendium --template-file infra/worker-stack.yml --stack-name compendium-worker --capabilities CAPABILITY_NAMED_IAM --parameter-overrides ArtifactObjectKey=worker/compendium-worker-0.0.1-SNAPSHOT.jar InternalApiBaseUrl=<api-stack EnvironmentURL from above>
 ```
 
 `CAPABILITY_NAMED_IAM` is required for this template's named

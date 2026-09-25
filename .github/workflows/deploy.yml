@@ -27,12 +27,12 @@ jobs:
     name: Release & deploy API to Elastic Beanstalk
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # release:prepare inspects full git history; shallow clone breaks it.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: temurin
@@ -88,7 +88,7 @@ jobs:
           JAR=$(find "$(pwd)/target" -name "compendium-api-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -198,12 +198,12 @@ jobs:
     name: Release & deploy worker Lambda
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # release:prepare inspects full git history; shallow clone breaks it.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: temurin
@@ -253,7 +253,7 @@ jobs:
           JAR=$(find "$(pwd)/target" -name "compendium-worker-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -290,7 +290,7 @@ jobs:
     name: Build & deploy React SPA to S3
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Enable Corepack for Yarn 4
         run: corepack enable
@@ -307,7 +307,7 @@ jobs:
       - run: yarn build
         working-directory: web
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
