@@ -7,8 +7,24 @@ on:
   # e.g. after updating an EB environment variable via CloudFormation.
   workflow_dispatch:
     inputs:
-      skip_release:
-        description: 'Skip maven release:prepare/perform and deploy current POM version as-is'
+      deploy_api:
+        description: 'Queue the API for deployment'
+        type: boolean
+        default: true
+      deploy_worker:
+        description: 'Queue the worker Lambda for deployment'
+        type: boolean
+        default: true
+      deploy_web:
+        description: 'Queue the web SPA for deployment'
+        type: boolean
+        default: true
+      skip_release_api:
+        description: 'Skip maven release:prepare/perform for the API and deploy current POM version as-is'
+        type: boolean
+        default: false
+      skip_release_worker:
+        description: 'Skip maven release:prepare/perform for the worker and deploy current POM version as-is'
         type: boolean
         default: false
 
@@ -45,10 +61,12 @@ jobs:
           # env var. There's no meaningful "diff" for this event type, so
           # skip path detection entirely and just deploy everything.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual dispatch — deploying all modules regardless of changed paths."
-            echo "api=true" >> $GITHUB_OUTPUT
-            echo "worker=true" >> $GITHUB_OUTPUT
-            echo "web=true" >> $GITHUB_OUTPUT
+            # Manual dispatch: each artifact is queued independently via its
+            # own deploy_* input, not inferred from changed paths.
+            echo "Manual dispatch — using deploy_api/deploy_worker/deploy_web inputs."
+            echo "api=${{ inputs.deploy_api }}" >> $GITHUB_OUTPUT
+            echo "worker=${{ inputs.deploy_worker }}" >> $GITHUB_OUTPUT
+            echo "web=${{ inputs.deploy_web }}" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -92,13 +110,13 @@ jobs:
 
       - name: Configure Git identity for release commits
         # release:prepare commits twice. Without a git identity the commit fails.
-        if: inputs.skip_release != true
+        if: inputs.skip_release_api != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Maven release:prepare + release:perform
-        if: inputs.skip_release != true
+        if: inputs.skip_release_api != true
         working-directory: api
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,7 +128,7 @@ jobs:
             -Dpassword=${{ secrets.GITHUB_TOKEN }}
 
       - name: Build JAR (release skipped)
-        if: inputs.skip_release == true
+        if: inputs.skip_release_api == true
         working-directory: api
         run: ./mvnw --no-transfer-progress --batch-mode package -DskipTests
 
@@ -121,7 +139,7 @@ jobs:
         working-directory: api
         shell: bash
         run: |
-          if [ "${{ inputs.skip_release }}" = "true" ]; then
+          if [ "${{ inputs.skip_release_api }}" = "true" ]; then
             # -DforceStdout writes to stdout alongside Maven's own log, and
             # the two can land on the same line with no separator (seen in
             # practice: "[INFO] [stdout] 0.0.24-SNAPSHOT"), which broke the
@@ -257,15 +275,16 @@ jobs:
     # this job to wait its turn instead.
     #
     # Setting our own `if:` below replaces the implicit default of
-    # success(), so deploy-api's outcome has to be checked explicitly here
-    # too, not assumed: a skipped deploy-api (its own path didn't change —
-    # see detect-changes) must still let this job run, but an actually
-    # *failed* deploy-api must not — proceeding past a broken API deploy to
-    # push another release commit would only compound the mess.
+    # success(), so it's spelled out explicitly here: this job runs
+    # whenever worker changed, regardless of whether deploy-api succeeded,
+    # failed, or was skipped — the two releases are otherwise independent,
+    # and a broken API deploy shouldn't hold worker's own release hostage.
+    # !cancelled() (not always()) so a manually cancelled run still stops
+    # this from pushing a release.
     needs: [detect-changes, deploy-api]
     if: |
-      needs.detect-changes.outputs.worker == 'true' &&
-      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
+      !cancelled() &&
+      needs.detect-changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -281,13 +300,13 @@ jobs:
           cache-dependency-path: worker/pom.xml
 
       - name: Configure Git identity for release commits
-        if: inputs.skip_release != true
+        if: inputs.skip_release_worker != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Maven release:prepare + release:perform
-        if: inputs.skip_release != true
+        if: inputs.skip_release_worker != true
         working-directory: worker
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -299,7 +318,7 @@ jobs:
             -Dpassword=${{ secrets.GITHUB_TOKEN }}
 
       - name: Build JAR (release skipped)
-        if: inputs.skip_release == true
+        if: inputs.skip_release_worker == true
         working-directory: worker
         run: ./mvnw --no-transfer-progress --batch-mode package -DskipTests
 
@@ -308,7 +327,7 @@ jobs:
         working-directory: worker
         shell: bash
         run: |
-          if [ "${{ inputs.skip_release }}" = "true" ]; then
+          if [ "${{ inputs.skip_release_worker }}" = "true" ]; then
             # See deploy-api's identical step for why -Doutput replaces
             # -DforceStdout here.
             ./mvnw help:evaluate -Dexpression=project.version -q -Doutput=/tmp/version.txt
