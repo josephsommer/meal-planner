@@ -23,8 +23,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  detect-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      worker: ${{ steps.filter.outputs.worker }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Determine which modules changed
+        id: filter
+        shell: bash
+        run: |
+          # A manual dispatch is an explicit request to deploy regardless of
+          # what changed — e.g. redeploying after an infra-only change that
+          # needs the app restarted to pick up a new CloudFormation-driven
+          # env var. There's no meaningful "diff" for this event type, so
+          # skip path detection entirely and just deploy everything.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — deploying all modules regardless of changed paths."
+            echo "api=true" >> $GITHUB_OUTPUT
+            echo "worker=true" >> $GITHUB_OUTPUT
+            echo "web=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.event.after }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # No prior commit to diff against (first push to the branch,
+            # or a force-push GitHub can't compute a range for) — deploy
+            # everything rather than guess.
+            echo "No previous commit to diff against — deploying all modules."
+            echo "api=true" >> $GITHUB_OUTPUT
+            echo "worker=true" >> $GITHUB_OUTPUT
+            echo "web=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
+          echo "Changed files:"
+          echo "$CHANGED"
+          echo "api=$(echo "$CHANGED" | grep -q '^api/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "worker=$(echo "$CHANGED" | grep -q '^worker/' && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "web=$(echo "$CHANGED" | grep -q '^web/' && echo true || echo false)" >> $GITHUB_OUTPUT
+
   deploy-api:
     name: Release & deploy API to Elastic Beanstalk
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -196,6 +247,22 @@ jobs:
 
   deploy-worker:
     name: Release & deploy worker Lambda
+    # Sequenced after deploy-api, not parallel to it — both run
+    # maven-release-plugin, which pushes 2 commits + a tag back to main.
+    # Racing pushes from two jobs in the same run means whichever finishes
+    # second gets a non-fast-forward rejection. needs: deploy-api forces
+    # this job to wait its turn instead.
+    #
+    # Setting our own `if:` below replaces the implicit default of
+    # success(), so deploy-api's outcome has to be checked explicitly here
+    # too, not assumed: a skipped deploy-api (its own path didn't change —
+    # see detect-changes) must still let this job run, but an actually
+    # *failed* deploy-api must not — proceeding past a broken API deploy to
+    # push another release commit would only compound the mess.
+    needs: [detect-changes, deploy-api]
+    if: |
+      needs.detect-changes.outputs.worker == 'true' &&
+      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -288,6 +355,10 @@ jobs:
 
   deploy-web:
     name: Build & deploy React SPA to S3
+    # No git push in this job (no maven-release-plugin), so no race with
+    # deploy-api/deploy-worker — runs independently, in parallel with them.
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
