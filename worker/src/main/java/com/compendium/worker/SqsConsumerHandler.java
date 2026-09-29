@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.ssm.SsmClient;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,7 +56,9 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, SQSBatchResp
                 processMessage(message, context);
             } catch (RetryableFailureSignal e) {
                 context.getLogger().log("Retryable failure for message " + message.getMessageId() + ": " + e.getMessage());
-                context.getLogger().log("Stack trace: " + e.getStackTrace(), LogLevel.DEBUG);
+                final StringWriter sw = new StringWriter();
+                e.printStackTrace(new PrintWriter(sw, true));
+                context.getLogger().log("Stack trace: " + sw.toString(), LogLevel.DEBUG);
                 failures.add(new SQSBatchResponse.BatchItemFailure(message.getMessageId()));
             }
         }
