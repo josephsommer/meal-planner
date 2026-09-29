@@ -122,10 +122,13 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.skip_release }}" = "true" ]; then
-            # -q -DforceStdout is supposed to print only the raw value, but
-            # Maven sometimes leaks a stray log line ahead of it anyway.
-            # The real value is always the last non-empty line.
-            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout | tail -n 1)
+            # -DforceStdout writes to stdout alongside Maven's own log, and
+            # the two can land on the same line with no separator (seen in
+            # practice: "[INFO] [stdout] 0.0.24-SNAPSHOT"), which broke the
+            # previous "tail -n 1" mitigation. -Doutput writes the raw value
+            # straight to a file instead, bypassing stdout entirely.
+            ./mvnw help:evaluate -Dexpression=project.version -q -Doutput=/tmp/version.txt
+            VERSION=$(cat /tmp/version.txt)
           else
             VERSION=$(git describe --tags --abbrev=0 | sed 's/compendium-api-//')
           fi
@@ -147,8 +150,8 @@ jobs:
 
       - name: Upload JAR to S3 artifact bucket
         run: |
-          aws s3 cp ${{ steps.jar.outputs.jar_path }} \
-            s3://${{ secrets.EB_ARTIFACT_BUCKET }}/compendium-api-${{ steps.version.outputs.release_version }}.jar
+          aws s3 cp "${{ steps.jar.outputs.jar_path }}" \
+            "s3://${{ secrets.EB_ARTIFACT_BUCKET }}/compendium-api-${{ steps.version.outputs.release_version }}.jar"
 
       - name: Create EB application version
         run: |
@@ -306,7 +309,10 @@ jobs:
         shell: bash
         run: |
           if [ "${{ inputs.skip_release }}" = "true" ]; then
-            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout | tail -n 1)
+            # See deploy-api's identical step for why -Doutput replaces
+            # -DforceStdout here.
+            ./mvnw help:evaluate -Dexpression=project.version -q -Doutput=/tmp/version.txt
+            VERSION=$(cat /tmp/version.txt)
           else
             VERSION=$(git describe --tags --abbrev=0 | sed 's/compendium-worker-//')
           fi
@@ -329,15 +335,15 @@ jobs:
       - name: Upload JAR to S3 artifact bucket
         # Same bucket api-stack owns, worker/ prefix — no second bucket.
         run: |
-          aws s3 cp ${{ steps.jar.outputs.jar_path }} \
-            s3://${{ secrets.EB_ARTIFACT_BUCKET }}/worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar
+          aws s3 cp "${{ steps.jar.outputs.jar_path }}" \
+            "s3://${{ secrets.EB_ARTIFACT_BUCKET }}/worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar"
 
       - name: Update Lambda function code
         run: |
           aws lambda update-function-code \
             --function-name compendium-article-fetch \
-            --s3-bucket ${{ secrets.EB_ARTIFACT_BUCKET }} \
-            --s3-key worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar
+            --s3-bucket "${{ secrets.EB_ARTIFACT_BUCKET }}" \
+            --s3-key "worker/compendium-worker-${{ steps.version.outputs.release_version }}.jar"
 
       - name: Wait for Lambda update to complete
         # update-function-code is asynchronous — mirrors deploy-api's
