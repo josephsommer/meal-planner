@@ -59,7 +59,7 @@ admin-password: ${ADMIN_PASSWORD}
 # aws-parameterstore import; a missing value should fail startup, not silently
 # accept an empty/guessable secret. Tests override via @TestPropertySource.
 internal:
-  worker-secret: ${WORKER_SHARED_SECRET}
+  worker-secret: ${worker-shared-secret}
 
 # URL of the SQS queue ArticleService publishes fetch jobs to, and the rescan
 # job (ArticleRescanConfig) republishes stuck articles / drains the DLQ from.
