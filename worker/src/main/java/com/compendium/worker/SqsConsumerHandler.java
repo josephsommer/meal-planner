@@ -54,6 +54,7 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, SQSBatchResp
                 processMessage(message, context);
             } catch (RetryableFailureSignal e) {
                 context.getLogger().log("Retryable failure for message " + message.getMessageId() + ": " + e.getMessage());
+                context.getLogger().log("Stack trace: " + e.getStackTrace(), LogLevel.DEBUG);
                 failures.add(new SQSBatchResponse.BatchItemFailure(message.getMessageId()));
             }
         }
