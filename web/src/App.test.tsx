@@ -1,25 +1,35 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { renderWithQueryClient } from './test-utils'
+
+function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    text: () => Promise.resolve(JSON.stringify(body)),
+  }
+}
 
 describe('App', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            message: 'Hello from Compendium API',
-            timestamp: '2026-05-27T00:00:00Z',
-          }),
-      }),
-    )
+  it('shows the login view when the initial articles check is unauthenticated', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(null, { ok: false, status: 401 })))
+    renderWithQueryClient(<App />)
+
+    expect(await screen.findByLabelText('Username')).toBeInTheDocument()
   })
 
-  it('displays the hello message from the API', async () => {
-    render(<App />)
-    const message = await screen.findByText('Hello from Compendium API')
-    expect(message).toBeInTheDocument()
+  it('shows the articles view when the initial articles check succeeds', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])))
+    renderWithQueryClient(<App />)
+
+    expect(await screen.findByLabelText('Article URL')).toBeInTheDocument()
+  })
+
+  it('shows a generic error for a non-401 failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(null, { ok: false, status: 500 })))
+    renderWithQueryClient(<App />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong')
   })
 })
