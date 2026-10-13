@@ -400,14 +400,34 @@ jobs:
       - run: yarn install --immutable
         working-directory: web
 
-      - run: yarn build
-        working-directory: web
-
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve current API endpoint
+        # Same reasoning as deploy-api's "Resolve current EB environment
+        # name" step: the API's EB environment (and so its endpoint
+        # hostname) can change on a CloudFormation-driven recreation, so it
+        # can't be pinned in a secret. Look up the live one at build time.
+        id: api_url
+        run: |
+          ENDPOINT=$(aws elasticbeanstalk describe-environments \
+            --application-name ${{ secrets.EB_APPLICATION_NAME }} \
+            --query "Environments[?Status!='Terminated'] | [0].EndpointURL" \
+            --output text)
+          if [ -z "$ENDPOINT" ] || [ "$ENDPOINT" = "None" ]; then
+            echo "No active EB environment found for application ${{ secrets.EB_APPLICATION_NAME }}" >&2
+            exit 1
+          fi
+          echo "Resolved API endpoint: $ENDPOINT"
+          echo "url=http://$ENDPOINT" >> $GITHUB_OUTPUT
+
+      - run: yarn build
+        working-directory: web
+        env:
+          VITE_API_BASE_URL: ${{ steps.api_url.outputs.url }}
 
       - name: Sync dist/ to S3
         # --delete removes stale Vite content-hashed bundles from S3.

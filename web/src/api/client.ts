@@ -13,6 +13,13 @@ function getXsrfCookie(): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+// Empty by default, which keeps every path relative: in local dev that's what
+// the Vite proxy (vite.config.ts) expects, and in tests it's what the
+// fetch mocks expect. The deploy workflow sets VITE_API_BASE_URL at build
+// time, since the deployed frontend (S3) and API (EB) are on different
+// origins with no proxy between them.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
@@ -22,7 +29,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     if (token) headers.set('X-XSRF-TOKEN', token)
   }
 
-  return fetch(path, { ...init, headers, credentials: 'include' })
+  return fetch(`${API_BASE_URL}${path}`, { ...init, headers, credentials: 'include' })
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
