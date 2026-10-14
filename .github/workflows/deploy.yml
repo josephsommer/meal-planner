@@ -422,7 +422,7 @@ jobs:
             exit 1
           fi
           echo "Resolved API endpoint: $ENDPOINT"
-          echo "url=http://$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "url=https://$ENDPOINT" >> $GITHUB_OUTPUT
 
       - run: yarn build
         working-directory: web
