@@ -1,0 +1,11 @@
+admin-username: root
+admin-password: rootpass
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/compendium
+    username: root
+    password: rootpass
+
+internal:
+  worker-secret: localdevsecret

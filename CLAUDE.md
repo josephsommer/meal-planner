@@ -64,7 +64,7 @@ for your throughput.
 - **Do not use Conventional Commits.** Commit messages should follow the format (scope): <description>.
 - **Concise comments.** Only comment on things that require further details beyond the code to maintain,
   or deviate from expected norms.
-- **Branch per feature**, Check the branch before writing code, PR to `main`, squash merge.
+- **Branch per feature**, Check the branch before writing code, PR to `main`, then reset back to `main` after the PR build is green.
 
 ## Prohibited
 
