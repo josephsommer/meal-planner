@@ -160,16 +160,35 @@ jobs:
           JAR=$(find "$(pwd)/target" -name "compendium-api-*.jar" ! -name "*sources*" ! -path "*/staging/*" | head -1)
           echo "jar_path=$JAR" >> $GITHUB_OUTPUT
 
+      - name: Package EB source bundle (jar + .ebextensions)
+        # The Java SE platform only reads .ebextensions out of a zip source
+        # bundle — deploying the bare jar (the old behavior here) skips it
+        # entirely, so .ebextensions/*.config never actually reached EB.
+        # With no Procfile, EB auto-runs the single jar/war it finds at the
+        # bundle root, so this only needs the jar + .ebextensions alongside
+        # it, zipped flat (not nested under a staging/ path).
+        id: bundle
+        shell: bash
+        run: |
+          STAGING=$(mktemp -d)
+          cp "${{ steps.jar.outputs.jar_path }}" "$STAGING/"
+          cp -r .ebextensions "$STAGING/"
+          BUNDLE_NAME="compendium-api-${{ steps.version.outputs.release_version }}.zip"
+          BUNDLE_PATH="$(pwd)/$BUNDLE_NAME"
+          (cd "$STAGING" && zip -r "$BUNDLE_PATH" .)
+          echo "bundle_name=$BUNDLE_NAME" >> $GITHUB_OUTPUT
+          echo "bundle_path=$BUNDLE_PATH" >> $GITHUB_OUTPUT
+
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Upload JAR to S3 artifact bucket
+      - name: Upload application bundle to S3 artifact bucket
         run: |
-          aws s3 cp "${{ steps.jar.outputs.jar_path }}" \
-            "s3://${{ secrets.EB_ARTIFACT_BUCKET }}/compendium-api-${{ steps.version.outputs.release_version }}.jar"
+          aws s3 cp "${{ steps.bundle.outputs.bundle_path }}" \
+            "s3://${{ secrets.EB_ARTIFACT_BUCKET }}/${{ steps.bundle.outputs.bundle_name }}"
 
       - name: Create EB application version
         run: |
@@ -177,7 +196,7 @@ jobs:
             --application-name ${{ secrets.EB_APPLICATION_NAME }} \
             --version-label "${{ steps.version.outputs.release_version }}" \
             --source-bundle \
-              S3Bucket="${{ secrets.EB_ARTIFACT_BUCKET }}",S3Key="compendium-api-${{ steps.version.outputs.release_version }}.jar" \
+              S3Bucket="${{ secrets.EB_ARTIFACT_BUCKET }}",S3Key="${{ steps.bundle.outputs.bundle_name }}" \
             --auto-create-application \
             --process
 
