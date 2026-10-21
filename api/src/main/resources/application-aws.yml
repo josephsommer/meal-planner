@@ -40,3 +40,23 @@ db:
   endpoint: ${DB_ENDPOINT}
   iam-username: ${DB_IAM_USERNAME}
   region: ${AWS_DEFAULT_REGION:us-east-1}
+
+# nginx terminates TLS and forwards to Tomcat over plain http on localhost
+# (see .platform/nginx/conf.d/https.conf), so without this Tomcat sees every
+# request as insecure regardless of what the browser actually connected over.
+# framework makes Spring Boot's ForwardedHeaderFilter trust nginx's
+# X-Forwarded-Proto and rewrite request.isSecure()/getScheme() accordingly.
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        same-site: none
+        secure: true
+
+# Web (S3 static site) and API (EB) are different origins, so the CSRF
+# cookie SecurityConfig sets also needs SameSite=None/Secure — see
+# SecurityConfig's cookie.same-site/cookie.secure properties.
+cookie:
+  same-site: None
+  secure: true
