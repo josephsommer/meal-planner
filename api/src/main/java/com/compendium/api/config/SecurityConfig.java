@@ -3,6 +3,7 @@ package com.compendium.api.config;
 import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
 import com.compendium.api.security.SharedSecretAuthFilter;
+import com.compendium.api.security.SpaCsrfTokenRequestHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -17,6 +18,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -30,6 +32,19 @@ public class SecurityConfig {
 
     @Value("${cors.allowed-origin:http://localhost:5173}")
     private String allowedOrigin;
+
+    // Web (S3) and API (EB) are different origins in prod, so the session
+    // and CSRF cookies need SameSite=None for the browser to send them on
+    // cross-site fetches at all — which browsers only allow when Secure is
+    // also set. Both default to same-site-only values here so local dev
+    // (Vite's proxy makes requests same-origin, over plain http) and tests
+    // aren't forced onto a cookie a plain http response can't legally set.
+    // Overridden to None/true in application-aws.yml.
+    @Value("${cookie.same-site:Lax}")
+    private String cookieSameSite;
+
+    @Value("${cookie.secure:false}")
+    private boolean cookieSecure;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -93,7 +108,21 @@ public class SecurityConfig {
             // cookie on every response — so no dedicated endpoint is needed
             // to hand it out up front. See
             // https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html#csrf-integration-javascript-spa
-            .csrf(csrf -> csrf.spa())
+            //
+            // Not calling csrf.spa() directly: its CookieCsrfTokenRepository
+            // has no hook to set SameSite/Secure, and its request handler
+            // (SpaCsrfTokenRequestHandler) is a private nested class, so both
+            // pieces are reconstructed manually here — see
+            // SpaCsrfTokenRequestHandler in this app's security package for
+            // the handler, an exact copy of Spring Security's own.
+            .csrf(csrf -> {
+                CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+                csrfTokenRepository.setCookieCustomizer(cookie -> cookie
+                        .sameSite(cookieSameSite)
+                        .secure(cookieSecure));
+                csrf.csrfTokenRepository(csrfTokenRepository)
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler());
+            })
             // formLogin()'s default AuthenticationEntryPoint/failureHandler
             // both redirect (a login *page* for an unauthenticated request,
             // a ?error page on bad credentials), which makes sense for a
