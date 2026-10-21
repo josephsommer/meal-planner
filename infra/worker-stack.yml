@@ -146,7 +146,7 @@ Resources:
       Timeout: 30
       Environment:
         Variables:
-          INTERNAL_API_BASE_URL: !Sub "http://${InternalApiBaseUrl}"
+          INTERNAL_API_BASE_URL: !Sub "https://${InternalApiBaseUrl}"
           INTERNAL_SECRET_PARAMETER_NAME: !Ref SecretParameterName
       # No ReservedConcurrentExecutions, no Alias/Version +
       # ProvisionedConcurrencyConfig — both cost money even at zero
