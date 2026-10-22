@@ -36,9 +36,6 @@ management:
       exposure:
         include: health
 
-cors:
-  allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
-
 # Seeded into the users table by the V4__CreateAdminUser Flyway migration,
 # which BCrypt-hashes admin-password before insert — only the hash is ever
 # persisted. In prod (SPRING_PROFILES_ACTIVE=aws) admin-password comes from
