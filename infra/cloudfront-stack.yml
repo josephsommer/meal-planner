@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFront distribution unifying the S3 static-website frontend and the
+  EB API under one HTTPS origin, so session/CSRF cookies are same-site
+  (see ADR on cross-site cookies). Deploy AFTER web-stack and api-stack —
+  imports CompendiumWebURL and CompendiumApiURL. Must be redeployed if the
+  EB environment is recreated (EnvironmentURL export changes), since this
+  stack pins that hostname as the API origin's DomainName at deploy time;
+  it is not resolved dynamically.
+
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2
+        # North America + Europe edge locations only — cheapest price class,
+        # plenty for a portfolio project with no real global traffic.
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+
+        Origins:
+          # S3 website endpoint, not the REST API origin/OAC. Website
+          # hosting (the ErrorDocument SPA-routing fallback) only exists on
+          # this endpoint, and it's HTTP-only regardless of OAC — strip the
+          # "http://" scheme off web-stack's WebsiteURL export since
+          # CustomOriginConfig needs a bare hostname.
+          - Id: S3WebOrigin
+            DomainName: !Select [1, !Split ["http://", !ImportValue CompendiumWebURL]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              HTTPSPort: 443
+
+          # EB environment. http-only is correct, not a fallback: the
+          # self-signed-cert nginx listener on 443 is being removed in this
+          # same change (no caller needs it anymore), and CloudFront would
+          # reject that cert for https-only/match-viewer regardless
+          # (OriginSSLError) — there's no pinning option on CloudFront's
+          # side the way there was in the worker's old InternalApiClient.
+          - Id: EBApiOrigin
+            DomainName: !ImportValue CompendiumApiURL
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              HTTPSPort: 443
+            # CloudFront does not forward the viewer's real X-Forwarded-Proto
+            # to a custom origin by default. A fixed header is correct (not
+            # just simpler) here because ViewerProtocolPolicy below is
+            # redirect-to-https, so any request that reaches CloudFront is
+            # guaranteed to have been HTTPS from the viewer already.
+            # application-aws.yml's forward-headers-strategy: framework
+            # reads this to make request.isSecure()/getScheme() correct.
+            OriginCustomHeaders:
+              - HeaderName: X-Forwarded-Proto
+                HeaderValue: https
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3WebOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # Managed-CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: EBApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            # Managed-CachingDisabled — the API must never be served stale
+            # from an edge cache; every request has to reach the origin.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # Managed-AllViewer — forwards ALL headers, cookies, and query
+            # strings to the origin. CloudFront's default behavior does NOT
+            # forward cookies to a custom origin at all, which would
+            # silently break login (no session/XSRF cookie would ever
+            # reach Spring Security) without this.
+            OriginRequestPolicyId: 216adef6-5c7f-44e4-ba68-a1cc5d0b7f9f
+
+Outputs:
+  DistributionDomainName:
+    Description: >
+      CloudFront domain (e.g. d111111abcdef8.cloudfront.net). This is the
+      single origin the deployed SPA and browsers now talk to, and becomes
+      worker-stack's InternalApiBaseUrl parameter value.
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: CompendiumCloudFrontDomain
+
+  DistributionId:
+    Description: >
+      Needed as the CLOUDFRONT_DISTRIBUTION_ID GitHub secret, for
+      deploy.yml's post-deploy cache-invalidation step.
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: CompendiumCloudFrontDistributionId
