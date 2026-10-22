@@ -4,11 +4,13 @@ Description: >
   readable text (ADR-0004). Always-free-tier: no VPC config on the Lambda,
   no reserved/provisioned concurrency.
 
-  Deploy AFTER api-stack (imports its artifact S3 bucket export, and needs
-  its EB environment URL for InternalApiBaseUrl). api-stack itself must
-  then be updated a second time, after this stack exists, to add the
-  compendium-sqs-publish/compendium-sqs-dlq-drain policies and the
-  ARTICLE_FETCH_QUEUE_URL/ARTICLE_FETCH_DLQ_URL env vars.
+  Deploy AFTER api-stack (imports its artifact S3 bucket export) and AFTER
+  cloudfront-stack (needs its distribution domain for InternalApiBaseUrl —
+  the worker's callback goes through CloudFront too, not directly to EB;
+  see InternalApiClient). api-stack itself must then be updated a second
+  time, after this stack exists, to add the compendium-sqs-publish/
+  compendium-sqs-dlq-drain policies and the ARTICLE_FETCH_QUEUE_URL/
+  ARTICLE_FETCH_DLQ_URL env vars.
 
 Parameters:
   ArtifactObjectKey:
@@ -25,10 +27,14 @@ Parameters:
   InternalApiBaseUrl:
     Type: String
     Description: >
-      Hostname of the API's EB environment, without http:// (same
-      convention as api-stack's DBEndpoint parameter). Obtained from:
-        aws cloudformation describe-stacks --stack-name compendium-api \
-          --query "Stacks[0].Outputs[?OutputKey=='EnvironmentURL'].OutputValue" --output text
+      CloudFront distribution domain fronting the API (e.g.
+      d111111abcdef8.cloudfront.net), without http:// — NOT the EB
+      environment's own hostname. Obtained from:
+        aws cloudformation describe-stacks --stack-name compendium-cloudfront \
+          --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text
+      Using the CloudFront domain here also fixes a staleness problem this
+      parameter used to have: that domain is stable across EB environment
+      recreations, unlike the EB hostname this previously pointed at.
 
   SecretParameterName:
     Type: String
