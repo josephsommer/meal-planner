@@ -47,8 +47,8 @@ Resources:
 Outputs:
   WebsiteURL:
     Description: >
-      S3 static website endpoint. Copy this URL into the CorsAllowedOrigin
-      parameter when redeploying infra/api-stack.yml.
+      S3 static website endpoint. Consumed by infra/cloudfront-stack.yml
+      as the S3 origin (deploy that stack after this one).
     Value: !GetAtt WebBucket.WebsiteURL
     Export:
       Name: CompendiumWebURL
