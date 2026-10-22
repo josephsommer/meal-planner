@@ -19,27 +19,18 @@ import org.springframework.security.web.authentication.AuthenticationEntryPointF
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import tools.jackson.databind.ObjectMapper;
-
-import java.util.List;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Value("${cors.allowed-origin:http://localhost:5173}")
-    private String allowedOrigin;
-
-    // Web (S3) and API (EB) are different origins in prod, so the session
-    // and CSRF cookies need SameSite=None for the browser to send them on
-    // cross-site fetches at all — which browsers only allow when Secure is
-    // also set. Both default to same-site-only values here so local dev
-    // (Vite's proxy makes requests same-origin, over plain http) and tests
-    // aren't forced onto a cookie a plain http response can't legally set.
-    // Overridden to None/true in application-aws.yml.
+    // Secure needs to be true in prod (CloudFront's viewer connection is
+    // HTTPS) but false locally (plain http through Vite's dev proxy, which
+    // also makes the SPA and API same-origin there already). SameSite stays
+    // Lax everywhere — the SPA and API share one CloudFront origin in prod
+    // now, so there's no cross-site request for a cookie to need sending on.
+    // Overridden via application-aws.yml's cookie.secure.
     @Value("${cookie.same-site:Lax}")
     private String cookieSameSite;
 
@@ -97,7 +88,6 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             // Session-cookie auth is CSRF-exposed by default (a POST rides
             // along with whatever cookies the browser already has), so this
             // stays on rather than being disabled for convenience. spa() is
@@ -150,27 +140,5 @@ public class SecurityConfig {
                 .logoutUrl("/api/auth/logout")
                 .logoutSuccessHandler(new JsonLogoutSuccessHandler()));
         return http.build();
-    }
-
-    // Moved off the standalone CorsFilter bean CorsConfig used to declare:
-    // Spring Security's filter chain runs its own authorization checks
-    // before a plain servlet Filter registered outside it gets a say, so a
-    // separate CorsFilter can't reliably answer a preflight OPTIONS request
-    // before Security rejects it as unauthenticated. Wiring CORS through
-    // HttpSecurity.cors(...) instead makes Security itself preflight-aware.
-    // Registration stays scoped to /api/**, same as the filter it replaced —
-    // there's no reason to send credentialed CORS headers on /actuator/** or
-    // any other non-API path.
-    private CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(allowedOrigin));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Content-Type", "Authorization", "X-XSRF-TOKEN"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", config);
-        return source;
     }
 }
