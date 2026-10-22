@@ -174,7 +174,11 @@ jobs:
           STAGING=$(mktemp -d)
           cp "${{ steps.jar.outputs.jar_path }}" "$STAGING/"
           cp -r .ebextensions "$STAGING/"
-          cp -r .platform "$STAGING/"
+          # .platform/ no longer exists now that its one file (the
+          # self-signed-cert nginx listener, retired for CloudFront) is
+          # gone — git doesn't track empty directories. Guarded so a
+          # future .platform/ addition doesn't need this step touched again.
+          if [ -d .platform ]; then cp -r .platform "$STAGING/"; fi
           BUNDLE_NAME="compendium-api-${{ steps.version.outputs.release_version }}.zip"
           BUNDLE_PATH="$(pwd)/$BUNDLE_NAME"
           (cd "$STAGING" && zip -r "$BUNDLE_PATH" .)
