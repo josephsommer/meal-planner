@@ -27,13 +27,6 @@ Parameters:
       S3 bucket where the deploy workflow uploads versioned JARs.
       Convention: compendium-eb-artifacts-ACCOUNT_ID (must be globally unique).
 
-  CorsAllowedOrigin:
-    Type: String
-    Description: >
-      S3 website URL of the React SPA. Fill in after the web stack is deployed
-      and you have run: aws cloudformation describe-stacks --stack-name compendium-web
-    Default: "http://localhost:5173"
-
   DBEndpoint:
     Type: String
     Description: >
@@ -259,12 +252,6 @@ Resources:
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: JAVA_TOOL_OPTIONS
           Value: "-Xms256m -Xmx512m"
-
-        # Injected into the Spring app via ${CORS_ALLOWED_ORIGIN}.
-        # Update this after you know the S3 website URL.
-        - Namespace: aws:elasticbeanstalk:application:environment
-          OptionName: CORS_ALLOWED_ORIGIN
-          Value: !Ref CorsAllowedOrigin
 
         # Flyway reads these to connect as the master user (password auth).
         # The password itself is fetched from SSM by spring-cloud-aws at startup —
