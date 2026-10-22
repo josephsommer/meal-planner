@@ -431,28 +431,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Resolve current API endpoint
-        # Same reasoning as deploy-api's "Resolve current EB environment
-        # name" step: the API's EB environment (and so its endpoint
-        # hostname) can change on a CloudFormation-driven recreation, so it
-        # can't be pinned in a secret. Look up the live one at build time.
-        id: api_url
-        run: |
-          ENDPOINT=$(aws elasticbeanstalk describe-environments \
-            --application-name ${{ secrets.EB_APPLICATION_NAME }} \
-            --query "Environments[?Status!='Terminated'] | [0].EndpointURL" \
-            --output text)
-          if [ -z "$ENDPOINT" ] || [ "$ENDPOINT" = "None" ]; then
-            echo "No active EB environment found for application ${{ secrets.EB_APPLICATION_NAME }}" >&2
-            exit 1
-          fi
-          echo "Resolved API endpoint: $ENDPOINT"
-          echo "url=https://$ENDPOINT" >> $GITHUB_OUTPUT
-
       - run: yarn build
         working-directory: web
-        env:
-          VITE_API_BASE_URL: ${{ steps.api_url.outputs.url }}
+        # No VITE_API_BASE_URL: the SPA and API now share one CloudFront
+        # origin, so relative /api/... paths already resolve correctly —
+        # client.ts's empty-string fallback is exactly what prod needs too.
+        # (The env var itself stays supported in client.ts as an escape
+        # hatch for pointing a build at a remote API directly if ever needed.)
 
       - name: Sync dist/ to S3
         # --delete removes stale Vite content-hashed bundles from S3.
@@ -462,3 +447,14 @@ jobs:
           aws s3 sync web/dist/ s3://${{ secrets.WEB_BUCKET }} \
             --delete \
             --cache-control "public, max-age=31536000, immutable"
+
+      - name: Invalidate CloudFront cache
+        # /* is billed as a single path regardless of object count, and the
+        # first 1,000 paths/month are free — invalidating everything on
+        # every deploy costs nothing at this project's scale. Without this,
+        # CloudFront's edge cache (on top of S3's own long cache-control)
+        # means deploys never actually show up for viewers.
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
