@@ -54,10 +54,3 @@ server:
     session:
       cookie:
         secure: true
-
-# The SPA and API now share one CloudFront origin, so SameSite stays at
-# SecurityConfig's Lax default — only Secure needs overriding here, since
-# CloudFront's viewer connection really is HTTPS (unlike local dev's plain
-# http through Vite's proxy).
-cookie:
-  secure: true

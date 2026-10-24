@@ -13,12 +13,15 @@ import java.util.function.Supplier;
 /**
  * A copy of Spring Security's own CsrfConfigurer.spa() request handler —
  * that class is a private nested type, so csrf.spa() can't be combined
- * with CookieCsrfTokenRepository.setCookieCustomizer (needed here to set
- * Secure; see SecurityConfig). This preserves spa()'s exact
- * behavior: BREACH-safe XOR masking on the way out, but still accepting
- * either the raw or XOR-masked value echoed back in the X-XSRF-TOKEN
- * header, since the cookie itself always holds the raw value for
- * JavaScript to read.
+ * with CookieCsrfTokenRepository.setCookieCustomizer, which is the only
+ * hook for overriding the CSRF cookie's Secure/SameSite attributes.
+ * Currently unused — SecurityConfig calls csrf.spa() directly instead,
+ * on purpose, to observe its default cookie attributes behind CloudFront.
+ * Kept here to pair with a custom CookieCsrfTokenRepository again if that
+ * turns out to be necessary. Preserves spa()'s exact behavior: BREACH-safe
+ * XOR masking on the way out, but still accepting either the raw or
+ * XOR-masked value echoed back in the X-XSRF-TOKEN header, since the
+ * cookie itself always holds the raw value for JavaScript to read.
  */
 public class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 
