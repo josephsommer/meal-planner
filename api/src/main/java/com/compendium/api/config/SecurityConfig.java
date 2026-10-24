@@ -3,7 +3,6 @@ package com.compendium.api.config;
 import com.compendium.api.security.JsonAuthenticationSuccessHandler;
 import com.compendium.api.security.JsonLogoutSuccessHandler;
 import com.compendium.api.security.SharedSecretAuthFilter;
-import com.compendium.api.security.SpaCsrfTokenRequestHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -18,24 +17,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-
-    // Secure needs to be true in prod (CloudFront's viewer connection is
-    // HTTPS) but false locally (plain http through Vite's dev proxy, which
-    // also makes the SPA and API same-origin there already). SameSite stays
-    // Lax everywhere — the SPA and API share one CloudFront origin in prod
-    // now, so there's no cross-site request for a cookie to need sending on.
-    // Overridden via application-aws.yml's cookie.secure.
-    @Value("${cookie.same-site:Lax}")
-    private String cookieSameSite;
-
-    @Value("${cookie.secure:false}")
-    private boolean cookieSecure;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -99,20 +85,16 @@ public class SecurityConfig {
             // to hand it out up front. See
             // https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html#csrf-integration-javascript-spa
             //
-            // Not calling csrf.spa() directly: its CookieCsrfTokenRepository
-            // has no hook to set SameSite/Secure, and its request handler
-            // (SpaCsrfTokenRequestHandler) is a private nested class, so both
-            // pieces are reconstructed manually here — see
-            // SpaCsrfTokenRequestHandler in this app's security package for
-            // the handler, an exact copy of Spring Security's own.
-            .csrf(csrf -> {
-                CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
-                csrfTokenRepository.setCookieCustomizer(cookie -> cookie
-                        .sameSite(cookieSameSite)
-                        .secure(cookieSecure));
-                csrf.csrfTokenRepository(csrfTokenRepository)
-                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler());
-            })
+            // Using the plain default (no custom CookieCsrfTokenRepository)
+            // as a deliberate learning exercise: deploy this behind
+            // CloudFront and observe what the XSRF-TOKEN cookie's Secure/
+            // SameSite attributes actually come out as, rather than forcing
+            // them. If something's wrong, com.compendium.api.security.
+            // SpaCsrfTokenRequestHandler (currently unused, kept on disk on
+            // purpose) is Spring's own spa() request handler extracted so a
+            // custom CookieCsrfTokenRepository.setCookieCustomizer(...) can
+            // be wired back in alongside it.
+            .csrf(csrf -> csrf.spa())
             // formLogin()'s default AuthenticationEntryPoint/failureHandler
             // both redirect (a login *page* for an unauthenticated request,
             // a ?error page on bad credentials), which makes sense for a
