@@ -3,10 +3,31 @@ Description: >
   CloudFront distribution unifying the S3 static-website frontend and the
   EB API under one HTTPS origin, so session/CSRF cookies are same-site
   (see ADR on cross-site cookies). Deploy AFTER web-stack and api-stack —
-  imports CompendiumWebURL and CompendiumApiURL. Must be redeployed if the
-  EB environment is recreated (EnvironmentURL export changes), since this
-  stack pins that hostname as the API origin's DomainName at deploy time;
-  it is not resolved dynamically.
+  imports CompendiumWebURL, and takes the EB environment's CNAME as a
+  parameter (see ApiEnvironmentCname below). Must be redeployed if the EB
+  environment is recreated, since a new environment gets a new CNAME and
+  this stack pins that hostname as the API origin's DomainName at deploy
+  time — it is not resolved dynamically.
+
+Parameters:
+  ApiEnvironmentCname:
+    Type: String
+    Description: >
+      The EB environment's own stable domain name, e.g.
+      compendium-api-prod.eba-xxxxxxxx.us-east-1.elasticbeanstalk.com.
+      NOT api-stack's EnvironmentURL export — that GetAtt returns the bare
+      EC2 instance IP on a SingleInstance tier environment (no ALB), and
+      CloudFront's CustomOriginConfig rejects a literal IP as DomainName.
+      CloudFormation has no way to read this CNAME (AWS::ElasticBeanstalk::
+      Environment only exposes EndpointURL via Fn::GetAtt), so it has to be
+      looked up and passed in by hand:
+        aws elasticbeanstalk describe-environments --profile compendium \
+          --environment-names compendium-api-prod \
+          --query "Environments[0].CNAME" --output text
+      Unlike the raw IP, this CNAME stays valid across EC2 instance/Elastic
+      IP replacement (that's its whole purpose) — but a full EB environment
+      recreation gets a new one, same as the existing EB-environment-name-
+      churn issue already requires a worker-stack redeploy for.
 
 Resources:
   CloudFrontDistribution:
@@ -40,7 +61,7 @@ Resources:
           # (OriginSSLError) — there's no pinning option on CloudFront's
           # side the way there was in the worker's old InternalApiClient.
           - Id: EBApiOrigin
-            DomainName: !ImportValue CompendiumApiURL
+            DomainName: !Ref ApiEnvironmentCname
             CustomOriginConfig:
               OriginProtocolPolicy: http-only
               HTTPPort: 80
