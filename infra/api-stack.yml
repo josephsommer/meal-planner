@@ -246,7 +246,7 @@ Resources:
         # Local dev is unaffected (no env var → falls back to 8080).
         - Namespace: aws:elasticbeanstalk:application:environment
           OptionName: SERVER_PORT
-          Value: "5000"
+          Value: "8080"
 
         # t2.micro has 1 GiB RAM. Leave headroom for the OS (~300 MiB).
         - Namespace: aws:elasticbeanstalk:application:environment
