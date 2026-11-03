@@ -100,6 +100,13 @@ jobs:
         with:
           # release:prepare inspects full git history; shallow clone breaks it.
           fetch-depth: 0
+          # Without this, checkout defaults to github.sha - the commit main
+          # pointed at when the run was triggered, pinned for the whole run.
+          # A workflow_dispatch run can sit queued/running for a while, and
+          # anything else landing on main after that (a direct push, another
+          # job) won't be reflected. ref: main always resolves to the live
+          # branch tip at checkout time instead.
+          ref: main
 
       - uses: actions/setup-java@v6
         with:
@@ -297,7 +304,12 @@ jobs:
     # maven-release-plugin, which pushes 2 commits + a tag back to main.
     # Racing pushes from two jobs in the same run means whichever finishes
     # second gets a non-fast-forward rejection. needs: deploy-api forces
-    # this job to wait its turn instead.
+    # this job to wait its turn instead. That alone isn't enough, though:
+    # without checkout's ref: main below, this job's checkout still
+    # defaults to github.sha, which is pinned to main's tip from when the
+    # run was triggered and does NOT advance just because deploy-api pushed
+    # more commits before this job started — a manually-dispatched run that
+    # sits running for a few minutes hits this every time.
     #
     # Setting our own `if:` below replaces the implicit default of
     # success(), so it's spelled out explicitly here: this job runs
@@ -316,6 +328,12 @@ jobs:
         with:
           # release:prepare inspects full git history; shallow clone breaks it.
           fetch-depth: 0
+          # Without this, checkout defaults to github.sha, pinned to main's
+          # tip when the run was triggered - not updated by deploy-api's own
+          # push even though needs: deploy-api makes this job run after it
+          # completes. ref: main re-resolves to the live branch tip here,
+          # which is what actually fixed this job racing deploy-api's push.
+          ref: main
 
       - uses: actions/setup-java@v6
         with:
