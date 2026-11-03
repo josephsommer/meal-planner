@@ -100,7 +100,7 @@ Resources:
             # forward cookies to a custom origin at all, which would
             # silently break login (no session/XSRF cookie would ever
             # reach Spring Security) without this.
-            OriginRequestPolicyId: 216adef6-5c7f-44e4-ba68-a1cc5d0b7f9f
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
 
 Outputs:
   DistributionDomainName:
