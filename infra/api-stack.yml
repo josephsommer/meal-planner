@@ -240,6 +240,18 @@ Resources:
           OptionName: Application Healthcheck URL
           Value: /actuator/health
 
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: "true"
+
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: DeleteOnTerminate
+          Value: "false"
+
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: RetentionInDays
+          Value: "14"
+
         # EB's bundled nginx reverse proxy on Corretto/AL2023 forwards
         # external port 80 → internal port 5000 by default.
         # Spring Boot reads SERVER_PORT automatically, overriding application.yml.
