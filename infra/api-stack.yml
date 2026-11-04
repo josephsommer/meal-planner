@@ -240,31 +240,14 @@ Resources:
           OptionName: Application Healthcheck URL
           Value: /actuator/health
 
-        # Streams the platform's standard log files (nginx access/error,
-        # eb-engine.log, and the app's own stdout, which is where Spring
-        # Boot's logging already goes) to CloudWatch Logs, under
-        # /aws/elasticbeanstalk/compendium-api-prod/<logfile>. No extra IAM
-        # grant needed - EC2InstanceRole's AWSElasticBeanstalkWebTier
-        # managed policy already covers PutLogEvents/CreateLogStream/
-        # Describe* on /aws/elasticbeanstalk* log groups; EB's own service
-        # role (not this instance role) handles log group creation.
         - Namespace: aws:elasticbeanstalk:cloudwatch:logs
           OptionName: StreamLogs
           Value: "true"
 
-        # Keep log groups around across an environment recreation (this
-        # environment has already been recreated once - see worker-stack's
-        # InternalApiBaseUrl history) instead of losing them when the old
-        # environment is deleted.
         - Namespace: aws:elasticbeanstalk:cloudwatch:logs
           OptionName: DeleteOnTerminate
           Value: "false"
 
-        # CloudWatch's own default is to never expire log events, which
-        # just grows storage forever. 14 days is plenty of runway for
-        # debugging without manual cleanup - well within CloudWatch Logs'
-        # always-free tier (5GB ingest + 5GB storage/month) at this
-        # project's log volume regardless.
         - Namespace: aws:elasticbeanstalk:cloudwatch:logs
           OptionName: RetentionInDays
           Value: "14"
