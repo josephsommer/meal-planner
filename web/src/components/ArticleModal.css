@@ -1,0 +1,53 @@
+.article-modal {
+  width: 90vw;
+  height: 90vh;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+}
+
+.article-modal::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.article-modal__panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.article-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.article-modal__header h2 {
+  margin: 0;
+}
+
+.article-modal__close {
+  font-size: 1.5rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.article-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  max-width: 70ch;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  /* Worker stores plain text; pre-wrap preserves its paragraph breaks. */
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
