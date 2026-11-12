@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useArticlesQuery, useCreateArticleMutation, useDeleteArticleMutation } from '../api/articles'
 import type { Article } from '../api/articles'
 import { useLogoutMutation } from '../api/auth'
+import ArticleModal from '../components/ArticleModal'
 
 function rowLabel(article: Article): string {
   const base = article.title ?? article.url
@@ -10,6 +11,7 @@ function rowLabel(article: Article): string {
 
 export default function ArticlesPage() {
   const [url, setUrl] = useState('')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const articlesQuery = useArticlesQuery()
   const createMutation = useCreateArticleMutation()
   const deleteMutation = useDeleteArticleMutation()
@@ -21,6 +23,7 @@ export default function ArticlesPage() {
   }
 
   const articles = articlesQuery.data ?? []
+  const selectedArticle = articles.find((article) => article.id === selectedId) ?? null
 
   return (
     <div>
@@ -50,6 +53,11 @@ export default function ArticlesPage() {
               <td>{rowLabel(article)}</td>
               <td>{article.excerpt ?? ''}</td>
               <td>
+                {article.fetchStatus === 'SUCCEEDED' && (
+                  <button type="button" onClick={() => setSelectedId(article.id)}>
+                    View
+                  </button>
+                )}
                 <button type="button" onClick={() => deleteMutation.mutate(article.id)}>
                   Delete
                 </button>
@@ -58,6 +66,8 @@ export default function ArticlesPage() {
           ))}
         </tbody>
       </table>
+
+      <ArticleModal article={selectedArticle} onClose={() => setSelectedId(null)} />
     </div>
   )
 }
