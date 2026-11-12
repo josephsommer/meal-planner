@@ -64,6 +64,28 @@ describe('ArticlesPage', () => {
     expect(await screen.findByText('https://example.com/c')).toBeInTheDocument()
   })
 
+  describe('viewing an article', () => {
+    it('shows View only for succeeded articles', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([succeeded, failed, pending])))
+      renderWithQueryClient(<ArticlesPage />)
+
+      await screen.findByText('Example A')
+      expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(1)
+    })
+
+    it('opens the full content in a modal and closes it', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([succeeded])))
+      renderWithQueryClient(<ArticlesPage />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'View' }))
+      expect(screen.getByRole('dialog', { name: 'Example A' })).toBeInTheDocument()
+      expect(screen.getByText('full text')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+  })
+
   describe('adding an article', () => {
     let fetchMock: ReturnType<typeof vi.fn>
 
