@@ -27,6 +27,17 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !ImportValue CompendiumEBInstanceSGId
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !GetAtt CloudShellSecurityGroup.GroupId
+
+  # Attach this to a CloudShell VPC environment (console only, not creatable
+  # in CFN). Outbound-only, so no ingress rules.
+  CloudShellSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC CloudShell sessions that need DB access
 
   DBInstance:
     Type: AWS::RDS::DBInstance
@@ -55,3 +66,7 @@ Outputs:
     Value: !GetAtt DBInstance.Endpoint.Address
     Export:
       Name: CompendiumDBEndpoint
+
+  CloudShellSecurityGroupId:
+    Description: Select this SG when creating a CloudShell VPC environment.
+    Value: !GetAtt CloudShellSecurityGroup.GroupId
