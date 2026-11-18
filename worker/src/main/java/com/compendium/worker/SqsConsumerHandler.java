@@ -1,6 +1,7 @@
 package com.compendium.worker;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaRuntime;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSBatchResponse;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
@@ -25,6 +26,9 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, SQSBatchResp
     // name) — real collaborators, including the cold-start SSM read.
     public SqsConsumerHandler() {
         this(new ArticleExtractor(), buildApiClient());
+        // Runs once per cold start, outside any invocation, so there is no
+        // Context yet; LambdaRuntime.getLogger() is the logger for that case.
+        LambdaRuntime.getLogger().log("Fetching articles with User-Agent: " + extractor.userAgent());
     }
 
     // Substitutable collaborators for tests, so a unit test doesn't have to
@@ -82,6 +86,8 @@ public class SqsConsumerHandler implements RequestHandler<SQSEvent, SQSBatchResp
         try {
             article = extractor.fetchAndExtract(payload.url());
         } catch (PermanentFetchException e) {
+            context.getLogger().log("Permanent failure for article " + payload.articleId() + " (" + payload.url() + "): "
+                    + e.getMessage(), LogLevel.WARN);
             reportFailureOrRetry(payload.articleId(), e.getMessage());
             return;
         } catch (RetryableFetchException e) {

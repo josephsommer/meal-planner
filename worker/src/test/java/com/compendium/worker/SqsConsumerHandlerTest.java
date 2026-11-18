@@ -2,6 +2,7 @@ package com.compendium.worker;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.LambdaLogger;
+import com.amazonaws.services.lambda.runtime.logging.LogLevel;
 import com.amazonaws.services.lambda.runtime.events.SQSBatchResponse;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,12 +35,15 @@ class SqsConsumerHandlerTest {
     @Mock
     private Context context;
 
+    @Mock
+    private LambdaLogger logger;
+
     private SqsConsumerHandler handler;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        when(context.getLogger()).thenReturn(org.mockito.Mockito.mock(LambdaLogger.class));
+        when(context.getLogger()).thenReturn(logger);
         handler = new SqsConsumerHandler(extractor, apiClient);
     }
 
@@ -65,6 +69,19 @@ class SqsConsumerHandlerTest {
 
         assertThat(response.getBatchItemFailures()).isEmpty();
         verify(apiClient).reportFailure(1L, "404");
+    }
+
+    @Test
+    void handleRequest_logsThePermanentFailureWithArticleIdUrlAndReason() throws Exception {
+        SQSEvent event = eventWithOneMessage("msg-1", "{\"articleId\":1,\"url\":\"https://example.com/a\"}");
+        when(extractor.fetchAndExtract("https://example.com/a"))
+                .thenThrow(new PermanentFetchException("Client error status code: 403 (server=cloudflare)"));
+
+        handler.handleRequest(event, context);
+
+        verify(logger).log(
+                "Permanent failure for article 1 (https://example.com/a): Client error status code: 403 (server=cloudflare)",
+                LogLevel.WARN);
     }
 
     @Test
