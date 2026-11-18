@@ -1,5 +1,6 @@
 package com.compendium.worker;
 
+import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +21,7 @@ class ArticleExtractorTest {
 
     private static HttpServer server;
     private static String baseUrl;
+    private static final AtomicReference<Headers> lastRequestHeaders = new AtomicReference<>();
     private final ArticleExtractor extractor = new ArticleExtractor();
 
     private static final String REAL_ARTICLE_HTML = """
@@ -50,6 +53,23 @@ class ArticleExtractorTest {
         register("/paywall", 200, "text/html", PAYWALL_HTML);
         register("/wrong-type", 200, "application/json", "{\"hello\":\"world\"}");
         register("/server-error", 500, "text/html", SHORT_ERROR_HTML);
+        server.createContext("/record-headers", exchange -> {
+            lastRequestHeaders.set(exchange.getRequestHeaders());
+            byte[] bytes = REAL_ARTICLE_HTML.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.createContext("/blocked", exchange -> {
+            byte[] bytes = "<html><body>Forbidden</body></html>".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.getResponseHeaders().add("Server", "cloudflare");
+            exchange.getResponseHeaders().add("cf-mitigated", "challenge");
+            exchange.sendResponseHeaders(403, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
         server.start();
         baseUrl = "http://localhost:" + server.getAddress().getPort();
     }
@@ -75,6 +95,23 @@ class ArticleExtractorTest {
 
         assertThat(article.title()).isEqualTo("Test Article");
         assertThat(article.content()).contains("fairly long test article");
+    }
+
+    @Test
+    void fetchAndExtract_sendsBrowserStyleAcceptHeadersWithTheDefaultUserAgent() throws Exception {
+        extractor.fetchAndExtract(baseUrl + "/record-headers");
+
+        Headers sent = lastRequestHeaders.get();
+        assertThat(sent.getFirst("Accept")).startsWith("text/html");
+        assertThat(sent.getFirst("Accept-Language")).startsWith("en-US");
+        assertThat(sent.getFirst("User-Agent")).isEqualTo(extractor.userAgent());
+    }
+
+    @Test
+    void fetchAndExtract_includesWafDiagnosticHeadersInTheFailureMessage() {
+        assertThatThrownBy(() -> extractor.fetchAndExtract(baseUrl + "/blocked"))
+                .isInstanceOf(PermanentFetchException.class)
+                .hasMessage("Client error status code: 403 (server=cloudflare, cf-mitigated=challenge, content-type=text/html)");
     }
 
     @Test
